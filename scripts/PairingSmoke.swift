@@ -33,7 +33,7 @@ struct SmokeFailure: Error { let message: String }
     @MainActor static func main() async throws {
         try await clientRejectsUnverifiedApproval(wrongCode:false)
         try await clientRejectsUnverifiedApproval(wrongCode:true)
-        let host = HostModel(); host.directOnly = true; host.startHost(localEndpoint:.hostPort(host:.ipv4(.loopback),port:.any))
+        let host = HostModel(); host.outputVolume = .nan; try require(host.outputVolume == 0,"Nonfinite local volume must clamp without recursion"); host.outputVolume = 1; host.directOnly = true; host.startHost(localEndpoint:.hostPort(host:.ipv4(.loopback),port:.any))
         defer { for device in host.devices where device.gate.approved { host.forgetDevice(device.id) }; host.stopHost() }
         try await wait("listener") { host.active && host.listeningPort != nil }
         let number = try unwrap(host.listeningPort)
@@ -129,6 +129,7 @@ struct SmokeFailure: Error { let message: String }
         reconnect.peer.send(auth)
         try await wait("remembered approval") { reconnect.last("pairApproved") != nil }
         try require(reconnect.last("pairApproved")?.pairingSecret == nil,"Reconnect must not resend the stored secret")
+        try require(reconnect.last("pairApproved")?.allowHostClientVolume == false,"Remembered pairing must retain Host-owned volume policy")
         try require(reconnect.last("pairPending") == nil,"Valid remembered pairing should not require another approval")
         reconnect.stats()
         try await wait("reconnected ready") { host.devices.contains { $0.deviceID == first.deviceID && $0.ready } }

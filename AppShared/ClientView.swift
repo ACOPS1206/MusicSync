@@ -94,6 +94,7 @@ struct ClientView: View {
                     Section { Button("Disconnect",role:.destructive) { model.disconnect() }.buttonStyle(.glass) }
                 }
                 ClientVolumeView(model:model)
+                LiveActivitySettingsView()
                 if model.paired, model.syncWarmupRemaining > 0 {
                     Label(String(format:tr("Sync warning detection starts in %.0f seconds"),ceil(model.syncWarmupRemaining)),systemImage:"hourglass").font(.caption).foregroundStyle(.secondary)
                 }
@@ -105,7 +106,6 @@ struct ClientView: View {
                         LabeledContent("Scheduled ahead", value: String(format:"%.0f ms",model.bufferAheadMS))
                     }
                 }
-                LiveActivitySettingsView()
                 if let error = model.error { Section("Attention") { Text(error).foregroundStyle(.red) } }
                 ProjectLinkView()
             }.navigationTitle(sessionTitle(model.sessionPhase))

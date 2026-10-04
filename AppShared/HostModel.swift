@@ -83,7 +83,8 @@ struct ConnectedDevice: Identifiable {
     @Published var fileName = ""
     @Published var layout = SpeakerLayout.stereo { didSet { player.channel = layout.localChannel; sendLayout() } }
     @Published var outputVolume = 1.0 { didSet {
-        outputVolume = min(1,max(0,outputVolume.isFinite ? outputVolume : 0))
+        let safe = min(1,max(0,outputVolume.isFinite ? outputVolume : 0))
+        if outputVolume != safe { outputVolume = safe; return }
         player.volume = Float(outputVolume); identifierSound.volume = Float(outputVolume)
         broadcastHostVolume()
     } }

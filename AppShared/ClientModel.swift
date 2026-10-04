@@ -65,7 +65,8 @@ struct NearbyMac: Identifiable {
     @Published var uncertainty = 0.0
     @Published var dropped = 0
     @Published var outputVolume = 1.0 { didSet {
-        outputVolume = min(1,max(0,outputVolume.isFinite ? outputVolume : 0))
+        let safe = min(1,max(0,outputVolume.isFinite ? outputVolume : 0))
+        if outputVolume != safe { outputVolume = safe; return }
         player.volume = Float(outputVolume); identifierSound.volume = Float(outputVolume)
         if !applyingVolumeCommand { reportVolume() }
     } }

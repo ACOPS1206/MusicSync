@@ -130,12 +130,12 @@ struct HostView: View {
                         }
                     }.disabled(!model.active || model.busy)
                 }
+                LiveActivitySettingsView()
                 if model.streaming, model.syncWarmupRemaining > 0 {
                     Label(String(format:tr("Sync warning detection starts in %.0f seconds"),ceil(model.syncWarmupRemaining)),systemImage:"hourglass").font(.caption).foregroundStyle(.secondary)
                 }
                 SyncWarningView(issues:model.syncIssues,input:model.healthInput,rtt:model.timingDevice?.rtt ?? 0,jitter:model.timingDevice?.jitter ?? 0,remoteIssues:model.syncWarmupRemaining > 0 ? [] : Array(Set(model.devices.flatMap(\.syncIssues))))
                 if model.active { RealtimeStatusView(phase:model.sessionPhase,traffic:model.traffic,drops:model.localDrops,schedulingErrorMS:model.schedulingErrorMS,updated:model.lastUpdated,timing:TimingSummaryView(latency:model.latency,rtt:model.timingDevice?.rtt ?? 0,offset:model.timingDevice?.offset ?? 0,jitter:model.timingDevice?.jitter ?? 0,uncertainty:model.healthInput.uncertainty,drops:model.localDrops,peerName:model.timingDevice?.name)) }
-                LiveActivitySettingsView()
                 #if os(macOS)
                 Section("Permissions & output") {
                     Text("Local Network discovers and streams to your iPhone. Synchronized mode needs System Audio Recording; monitor mode needs Screen & System Audio Recording. No microphone is used.")
