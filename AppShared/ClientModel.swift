@@ -33,6 +33,12 @@ struct NearbyMac: Identifiable {
     @Published var connected = false
     @Published var paired = false
     @Published var pairingCode = ""
+    @Published var codeConfirmed = false
+    @Published var encrypted = false
+    private var tlsTrust: TLSClientTrust?
+    private var tlsSession: TLSSessionInfo?
+    private var sentPairingProof = false
+    private var sessionPins: [String:String] = [:]
     @Published var connectedHostName = ""
     @Published var hostAddress = ""
     @Published var hostServiceName = ""
@@ -96,7 +102,7 @@ struct NearbyMac: Identifiable {
     func search() {
         guard browser == nil else { return }
         searching = true; error = nil; discoveryDenied = false
-        let browser = NWBrowser(for: .bonjour(type: LAN.service, domain: nil), using: LAN.parameters())
+        let browser = NWBrowser(for: .bonjour(type: LAN.service, domain: nil), using: LAN.discoveryParameters())
         browser.browseResultsChangedHandler = { [weak self] results, _ in MainActor.assumeIsolated {
             guard let self else { return }
             self.nearby = results.compactMap { result in
@@ -153,14 +159,22 @@ struct NearbyMac: Identifiable {
         audioInterrupted = false
         sessionPhase = "Connecting"; health = SyncHealthMonitor(); meter = TrafficMeter(); syncIssues = []; traffic = TrafficSnapshot(); lastPong = 0; peakScheduleError = 0; monitorMode = false
         requestedLatency = 0.18; receivedLatency = 0.18; playbackDrops = 0; dropped = 0
-        let peer = Peer(NWConnection(to: mac.endpoint, using: LAN.parameters()), queue: .main)
+        let knownID = UserDefaults.standard.string(forKey:"tls.endpoint." + mac.name)
+        let expectedPin = knownID.flatMap { sessionPins[$0] ?? PairingStore.read("pin." + $0) }
+        pairingHostID = knownID
+        let trust = TLSClientTrust(expectedPin:expectedPin); tlsTrust = trust; tlsSession = nil; sentPairingProof = false
+        let peer = Peer(NWConnection(to:mac.endpoint,using:LAN.clientParameters(trust:trust)),queue:.main)
         self.peer = peer; status = String(format: tr("Connecting to %@…"), mac.name)
         peer.onState = { [weak self, weak peer] state in
             guard let self, let peer, self.peer === peer else { return }
             switch state {
             case .ready:
+                guard let session = TLSSessionInfo.read(peer.connection), trust.publicKeyPin != nil else {
+                    self.securityFailure(tr("Encrypted connection verification failed. No audio was sent.")); return
+                }
+                self.tlsSession = session; self.encrypted = true
                 self.connected = true; self.status = tr("Authenticating with Host…"); self.sessionPhase = "Authenticating"
-                var hello = Message("hello"); hello.pairingVersion = 1; hello.deviceID = self.deviceID
+                var hello = Message("hello"); hello.pairingVersion = 2; hello.deviceID = self.deviceID
                 hello.channelSelection = self.channelOverride.rawValue
                 #if os(iOS)
                 hello.name = UIDevice.current.name
@@ -172,9 +186,10 @@ struct NearbyMac: Identifiable {
                     guard let self, let peer, self.peer === peer, !self.paired, self.pairingHostID == nil else { return }
                     self.disconnect(); self.error = tr("The Host did not respond to pairing. Update MusicSync on both devices and reconnect.")
                 }
-            case .failed(let error): self.error = error.localizedDescription; self.lost()
+            case .failed(let error), .waiting(let error):
+                if trust.pinRejected { self.securityFailure(tr("The Host security key changed. Verify the Host and forget its old pairing before reconnecting.")) }
+                else { self.error = error.localizedDescription; self.lost() }
             case .cancelled: self.lost()
-            case .waiting(let error): self.error = error.localizedDescription; self.lost()
             default: break
             }
         }
@@ -187,26 +202,39 @@ struct NearbyMac: Identifiable {
     private func handle(_ message: Message) {
         let now = SyncClock.now
         if message.kind == "pairChallenge" {
-            guard !paired, let hostID = message.hostID, UUID(uuidString:hostID) != nil,
+            guard !paired, message.pairingVersion == 2, let hostID = message.hostID, UUID(uuidString:hostID) != nil,
                   let nonce = message.nonce, UUID(uuidString:nonce) != nil else { return }
             pairingHostID = hostID; pairingNonce = nonce; updateHostInfo(message)
-            let secret = sessionSecrets[hostID] ?? PairingStore.read("client." + hostID)
-            if let secret, let proof = PairingProof.make(secret:secret,nonce:nonce,hostID:hostID,clientID:deviceID) {
+            guard let currentPin = tlsTrust?.publicKeyPin, let session = tlsSession else { securityFailure(tr("Encrypted connection verification failed. No audio was sent.")); return }
+            let savedPin = sessionPins[hostID] ?? PairingStore.read("pin." + hostID)
+            if let savedPin, savedPin != currentPin { securityFailure(tr("The Host security key changed. Verify the Host and forget its old pairing before reconnecting.")); return }
+            let secret = sessionSecrets[hostID] ?? PairingStore.read("client.tls2." + hostID)
+            if savedPin == currentPin, let secret, let proof = PairingProof.make(secret:secret,nonce:nonce,hostID:hostID,clientID:deviceID,binding:session.binding) {
+                sentPairingProof = true
                 var auth = Message("pairProof"); auth.pairingProof = proof; peer?.send(auth)
             } else { peer?.send(Message("pairRequest")) }
             return
         } else if message.kind == "pairPending" {
             guard !paired, let hostID = pairingHostID, message.hostID == hostID,
-                  let code = message.pairingCode, code.count == 6, code.allSatisfy({ $0.isASCII && $0.isNumber }) else { return }
-            pairingCode = code; status = tr("Waiting for Host approval…"); sessionPhase = "Awaiting approval"; updateHostInfo(message)
+                  let code = message.pairingCode, let local = tlsSession?.pairingCode else { return }
+            guard code == local else { securityFailure(tr("The pairing codes do not match. Disconnect and verify both devices.")); return }
+            pairingCode = local; codeConfirmed = false; sentPairingProof = false; status = tr("Waiting for Host approval…"); sessionPhase = "Awaiting approval"; updateHostInfo(message)
             return
         } else if message.kind == "pairApproved" {
             guard !paired, let hostID = pairingHostID, message.hostID == hostID else { return }
             if let secret = message.pairingSecret {
-                guard let data = Data(base64Encoded:secret), data.count == 32 else { return }
+                guard codeConfirmed, let pin = tlsTrust?.publicKeyPin, let data = Data(base64Encoded:secret), data.count == 32 else { securityFailure(tr("Confirm the matching code on both devices before approval.")); return }
+                sessionPins[hostID] = pin
+                if let name = selectedName { UserDefaults.standard.set(hostID,forKey:"tls.endpoint." + name) }
+                do { try PairingStore.write(pin,account:"pin." + hostID) } catch { pairingNotice = error.localizedDescription }
                 sessionSecrets[hostID] = secret
-                do { try PairingStore.write(secret,account:"client." + hostID) } catch { pairingNotice = error.localizedDescription }
-            } else if sessionSecrets[hostID] == nil && PairingStore.read("client." + hostID) == nil { return }
+                do { try PairingStore.write(secret,account:"client.tls2." + hostID) } catch { pairingNotice = error.localizedDescription }
+            } else {
+                guard sentPairingProof, let pin = tlsTrust?.publicKeyPin,
+                      (sessionPins[hostID] ?? PairingStore.read("pin." + hostID)) == pin else {
+                    securityFailure(tr("Confirm the matching code on both devices before approval.")); return
+                }
+            }
             paired = true; pairingCode = ""; updateHostInfo(message)
             if let raw = message.outputChannel, let channel = OutputChannel(rawValue:raw) { hostChannel = channel }
             do { try player.start() } catch { self.error = error.localizedDescription; disconnect(); return }
@@ -318,10 +346,22 @@ struct NearbyMac: Identifiable {
         message.playbackState = sessionPhase
         message.outputChannel = effectiveChannel.rawValue; message.requestID = requestID; peer?.send(message)
     }
+    func confirmPairingCode() {
+        guard !paired, !pairingCode.isEmpty, pairingCode == tlsSession?.pairingCode else { return }
+        codeConfirmed = true
+        var message = Message("pairConfirm"); message.pairingCode = pairingCode; peer?.send(message)
+    }
+    private func securityFailure(_ message: String) {
+        // Preserve Host identity so the user can explicitly forget the rejected pin.
+        wantConnection = false; retry?.cancel(); retry = nil
+        let old = peer; peer = nil; old?.cancel(); cleanup()
+        error = message; status = tr("Security verification failed"); sessionPhase = "Stopped"
+    }
     func identifyHost() { if paired { peer?.send(Message("identifyHost")) } }
     func forgetHost() {
         if let hostID = pairingHostID {
-            do { try PairingStore.remove("client." + hostID) } catch { pairingNotice = error.localizedDescription }
+            do { try PairingStore.remove("client.tls2." + hostID); try PairingStore.remove("pin." + hostID) } catch { pairingNotice = error.localizedDescription }
+            sessionPins[hostID] = nil
             sessionSecrets[hostID] = nil
         }
         disconnect()
@@ -341,7 +381,7 @@ struct NearbyMac: Identifiable {
     }
     private func cleanup() {
         pingTimer?.invalidate(); drainTimer?.invalidate(); pingTimer = nil; drainTimer = nil
-        identifierSound.stop(); paired = false; pairingCode = ""
+        identifierSound.stop(); paired = false; pairingCode = ""; codeConfirmed = false; encrypted = false; tlsSession = nil
         player.stop(); buffer = JitterQueue(); connected = false; lastAudio = 0; lastReport = 0
         health = SyncHealthMonitor(); syncIssues = []; bufferCount = 0; bufferAheadMS = 0; schedulingErrorMS = 0; traffic = TrafficSnapshot()
     }

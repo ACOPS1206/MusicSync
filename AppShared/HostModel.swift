@@ -29,6 +29,7 @@ struct ConnectedDevice: Identifiable {
     var deviceID: String?
     var nonce = UUID().uuidString
     var pairingCode: String?
+    var clientConfirmed = false
     var channelSelection = ChannelSelection.automatic
     var effectiveChannel = OutputChannel.stereo
     var pendingChannel: ChannelSelection?
@@ -58,6 +59,8 @@ struct ConnectedDevice: Identifiable {
     @Published var connectionAddress = ""
     @Published var serviceName = ""
     @Published var pairingNotice: String?
+    private var tlsIdentity: TLSIdentity?
+    @Published var encryptionPin = ""
     private let hostID = PairingStore.identity("host")
     private var sessionSecrets: [String:String] = [:]
     private var revokedIDs: Set<String> = []
@@ -102,11 +105,24 @@ struct ConnectedDevice: Identifiable {
         } }
         #endif
     }
-    func startHost() {
+    func startHost(localEndpoint: NWEndpoint? = nil) {
         guard !active else { return }
         error = nil; sessionID = UUID(); sessionPhase = "Connecting"
         do {
-            let listener = try NWListener(using: LAN.parameters())
+            if tlsIdentity == nil {
+                let stored = PairingStore.read("tls.host.key")
+                if let stored, Data(base64Encoded:stored) == nil { throw TLSError.identity }
+                let identity = try TLSIdentity.create(privateRepresentation:stored.flatMap { Data(base64Encoded:$0) })
+                tlsIdentity = identity; encryptionPin = identity.publicKeyPin
+                if stored == nil {
+                    do { try PairingStore.write(identity.privateRepresentation.base64EncodedString(),account:"tls.host.key") }
+                    catch { pairingNotice = error.localizedDescription }
+                }
+            }
+            guard let identity = tlsIdentity else { throw TLSError.identity }
+            let parameters = try LAN.hostParameters(identity:identity)
+            parameters.requiredLocalEndpoint = localEndpoint
+            let listener = try NWListener(using:parameters)
             #if os(macOS)
             let name = Host.current().localizedName ?? "MusicSync Mac"
             #else
@@ -157,6 +173,8 @@ struct ConnectedDevice: Identifiable {
         peer.onState = { [weak self, weak peer] state in
             guard let self, let peer else { return }
             switch state {
+            case .ready:
+                guard TLSSessionInfo.read(peer.connection) != nil else { peer.cancel(); return }
             case .cancelled, .failed:
                 self.peers.removeValue(forKey: peer.id); self.devices.removeAll { $0.id == peer.id }
             default: break
@@ -169,7 +187,7 @@ struct ConnectedDevice: Identifiable {
         }
     }
     private func hostInfo(_ kind: String) -> Message {
-        var message = Message(kind); message.pairingVersion = 1; message.hostID = hostID
+        var message = Message(kind); message.pairingVersion = 2; message.hostID = hostID
         message.name = serviceName; message.serviceName = directOnly ? nil : serviceName; message.hostAddress = connectionAddress
         return message
     }
@@ -177,7 +195,7 @@ struct ConnectedDevice: Identifiable {
         guard let index = devices.firstIndex(where: { $0.id == peer.id }), !devices[index].rejected, devices[index].gate.permits(message.kind) else { return }
         if message.kind == "hello" {
             guard !devices[index].gate.approved, devices[index].deviceID == nil else { return }
-            guard message.pairingVersion == 1, let id = message.deviceID, UUID(uuidString:id) != nil else { rejectDevice(peer.id); return }
+            guard message.pairingVersion == 2, let id = message.deviceID, UUID(uuidString:id) != nil else { rejectDevice(peer.id); return }
             devices[index].deviceID = id; devices[index].name = String((message.name ?? "MusicSync Client").prefix(80))
             devices[index].channelSelection = ChannelSelection(rawValue:message.channelSelection ?? "automatic") ?? .automatic
             var challenge = hostInfo("pairChallenge"); challenge.nonce = devices[index].nonce; peer.send(challenge)
@@ -185,11 +203,15 @@ struct ConnectedDevice: Identifiable {
             requestApproval(peer.id)
         } else if message.kind == "pairProof" {
             guard !devices[index].gate.approved, let id = devices[index].deviceID else { return }
-            let secret = sessionSecrets[id] ?? PairingStore.read("host." + id)
+            let secret = sessionSecrets[id] ?? PairingStore.read("host.tls2." + id)
             if !revokedIDs.contains(id), let secret, let proof = message.pairingProof,
-               PairingProof.verify(proof,secret:secret,nonce:devices[index].nonce,hostID:hostID,clientID:id) {
+               PairingProof.verify(proof,secret:secret,nonce:devices[index].nonce,hostID:hostID,clientID:id,binding:TLSSessionInfo.read(peer.connection)?.binding ?? "") {
                 authorize(peer.id,secret:nil)
             } else { requestApproval(peer.id) }
+        } else if message.kind == "pairConfirm" {
+            guard !devices[index].gate.approved, let code = devices[index].pairingCode,
+                  message.pairingCode == code else { rejectDevice(peer.id); return }
+            devices[index].clientConfirmed = true
         } else if message.kind == "ping", let t1 = message.t1 {
             var response = Message("pong"); response.t1 = t1
             response.t2 = SyncClock.now; response.t3 = SyncClock.now; peer.send(response)
@@ -223,14 +245,15 @@ struct ConnectedDevice: Identifiable {
     }
     private func requestApproval(_ id: UUID) {
         guard let index = devices.firstIndex(where: { $0.id == id }), devices[index].deviceID != nil, !devices[index].gate.approved else { return }
-        if devices[index].pairingCode == nil { devices[index].pairingCode = String(format:"%06d",Int.random(in:0...999_999)) }
+        guard let session = peers[id].flatMap({ TLSSessionInfo.read($0.connection) }) else { rejectDevice(id); return }
+        if devices[index].pairingCode == nil { devices[index].pairingCode = session.pairingCode; devices[index].clientConfirmed = false }
         var pending = hostInfo("pairPending"); pending.pairingCode = devices[index].pairingCode
         peers[id]?.send(pending)
     }
     func approveDevice(_ id: UUID) {
-        guard let device = devices.first(where: { $0.id == id }), let clientID = device.deviceID, device.pairingCode != nil, !device.gate.approved, !device.rejected else { return }
+        guard let device = devices.first(where: { $0.id == id }), let clientID = device.deviceID, device.pairingCode != nil, device.clientConfirmed, !device.gate.approved, !device.rejected else { return }
         let secret = PairingProof.newSecret(); sessionSecrets[clientID] = secret; revokedIDs.remove(clientID)
-        do { try PairingStore.write(secret,account:"host." + clientID) }
+        do { try PairingStore.write(secret,account:"host.tls2." + clientID) }
         catch { pairingNotice = error.localizedDescription }
         // A replaced pairing invalidates any other live socket claiming this device identity.
         for other in devices where other.id != id && other.deviceID == clientID { rejectDevice(other.id) }
@@ -250,7 +273,7 @@ struct ConnectedDevice: Identifiable {
     }
     func forgetDevice(_ id: UUID) {
         guard let device = devices.first(where: { $0.id == id }), let clientID = device.deviceID else { return }
-        do { try PairingStore.remove("host." + clientID) }
+        do { try PairingStore.remove("host.tls2." + clientID) }
         catch { pairingNotice = error.localizedDescription }
         revokedIDs.insert(clientID); sessionSecrets[clientID] = nil
         for other in devices where other.deviceID == clientID { rejectDevice(other.id) }

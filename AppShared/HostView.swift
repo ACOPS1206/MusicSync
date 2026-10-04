@@ -26,6 +26,7 @@ struct HostView: View {
                     Button(model.active ? tr("Stop Host") : tr("Start Host")) {
                         if model.active { model.stopHost() } else { model.startHost() }
                     }.buttonStyle(.glassProminent).disabled(model.busy)
+                    if model.active { Label("TLS 1.3 encrypted",systemImage:"lock.shield") }
                     if !model.connectionAddress.isEmpty {
                         LabeledContent("Direct connection", value: model.connectionAddress).textSelection(.enabled)
                         Button("Copy Connection Address") {
@@ -43,14 +44,15 @@ struct HostView: View {
                 LiveActivitySettingsView()
                 if model.devices.contains(where: { !$0.gate.approved }) {
                     Section("Pairing requests") {
-                        Text("Compare the six-digit code on both devices. Approve only the device you recognize. Unapproved devices receive no audio.").font(.caption).foregroundStyle(.secondary)
+                        Text("Compare all eight digits on both devices. The Client must confirm the match before you approve. Unapproved devices receive no audio.").font(.caption).foregroundStyle(.secondary)
                         ForEach(model.devices.filter { !$0.gate.approved }) { device in
                             VStack(alignment:.leading,spacing:8) {
                                 Label(device.name,systemImage:"iphone")
                                 if let code = device.pairingCode {
                                     Text(verbatim:code).font(.title2.monospacedDigit()).textSelection(.enabled)
+                                    if !device.clientConfirmed { Text("Waiting for Client code confirmation…").font(.caption).foregroundStyle(.secondary) }
                                     HStack {
-                                        Button("Approve") { model.approveDevice(device.id) }.buttonStyle(.glassProminent)
+                                        Button("Approve") { model.approveDevice(device.id) }.buttonStyle(.glassProminent).disabled(!device.clientConfirmed)
                                         Button("Reject",role:.destructive) { model.rejectDevice(device.id) }.buttonStyle(.glass)
                                     }
                                 } else { Text("Authenticating…").foregroundStyle(.secondary) }
@@ -63,6 +65,7 @@ struct HostView: View {
                     ForEach(model.devices.filter { $0.gate.approved }) { device in
                         VStack(alignment:.leading,spacing:8) {
                             Label(device.name,systemImage:"iphone")
+                            Label("TLS 1.3 encrypted",systemImage:"lock.shield").font(.caption)
                             Text(device.ready ? tr("Clock synchronized") : tr("Synchronizing…")).foregroundStyle(.secondary)
                             LabeledContent("Current output channel",value:device.effectiveChannel.title)
                             if model.streaming && device.ready { Text(tr(device.playbackState)).foregroundStyle(.secondary) }

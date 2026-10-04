@@ -15,8 +15,8 @@ struct HelpView: View {
                     Text("For LiveContainer hosting, enable Direct connection only before starting Host if Bonjour advertising is blocked. Copy the iPhone Host address into the other device. Local Network access is still required; container permissions can also affect music library import.")
                 }
                 Section("Pairing & device control") {
-                    Text("Connect to a Host, compare the six-digit code on both screens, then approve on the Host within 60 seconds. Mac and iPhone Hosts use the same approval flow. A remembered pairing authenticates each reconnect with a fresh challenge. Remove Pairing or Forget This Host revokes or removes the saved pairing. Both devices need MusicSync 0.5 or later.")
-                    Text("The Host device list shows each Client’s reported output channel. Change it from either device, or play an identification tone on just that Client. The Client displays the Host address and Bonjour service. Pairing controls access but initial pairing and PCM are not encrypted; use a trusted LAN. If Keychain is unavailable in LiveContainer, approval works for this app session and may be requested again after restart.")
+                    Text("Connect to a Host, compare all eight digits on both screens, confirm Codes Match on the Client, then approve on the Host within 60 seconds. Both devices need MusicSync 0.6 or later. A changed Host security key stops reconnect until you verify the Host and explicitly forget the old pairing.")
+                    Text("TLS 1.3 encrypts initial pairing, audio, clock messages and device controls. The comparison code is computed independently from each TLS connection. After approval the Client pins the Host public key. Bonjour names and addresses remain visible. If Keychain saving is unavailable, encryption still works for this session; restart may require reapproval or forgetting a changed Host key.")
                 }
                 Section("Stereo pair") {
                     Text("In stereo pair mode, Test Tone plays a shared alignment pulse, then a lower left-only tone, then a higher right-only tone each second.")

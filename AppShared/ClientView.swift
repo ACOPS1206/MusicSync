@@ -32,11 +32,14 @@ struct ClientView: View {
                         if !model.hostServiceName.isEmpty {
                             LabeledContent("Bonjour service",value:model.hostServiceName + " · _musicsync._tcp.local").textSelection(.enabled)
                         }
+                        if model.encrypted { Label("TLS 1.3 encrypted",systemImage:"lock.shield") }
                         if !model.paired {
                             if !model.pairingCode.isEmpty {
                                 LabeledContent("Pairing code") { Text(verbatim:model.pairingCode).font(.title2.monospacedDigit()).textSelection(.enabled) }
-                                Text("Check that the Host shows the same code, then approve this device on the Host. This also applies when another iPhone is the Host.").font(.caption).foregroundStyle(.secondary)
+                                Text("Compare all eight digits on both devices. Confirm here, then approve this device on the Host. Never approve different codes.").font(.caption).foregroundStyle(.secondary)
+                            Button(model.codeConfirmed ? tr("Code confirmed • waiting for Host") : tr("Codes Match")) { model.confirmPairingCode() }.buttonStyle(.glassProminent).disabled(model.codeConfirmed)
                             } else { Text("Authenticating with Host…").foregroundStyle(.secondary) }
+                            Button("Forget This Host",role:.destructive) { model.forgetHost() }.buttonStyle(.glass)
                         } else {
                             Label("Paired",systemImage:"checkmark.shield")
                             Button("Identify Host") { model.identifyHost() }.buttonStyle(.glass)

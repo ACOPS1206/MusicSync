@@ -19,6 +19,12 @@ final class PairingTests: XCTestCase {
         gate.approve(); XCTAssertTrue(gate.permits("stats")); XCTAssertTrue(gate.permits("identifyHost"))
         let reconnected = PairingGate(); XCTAssertFalse(reconnected.permits("stats"))
     }
+    func testProofIsBoundToTLSConnection() throws {
+        let secret = PairingProof.newSecret()
+        let proof = try XCTUnwrap(PairingProof.make(secret:secret,nonce:"nonce",hostID:"host",clientID:"client",binding:"TLS-A"))
+        XCTAssertTrue(PairingProof.verify(proof,secret:secret,nonce:"nonce",hostID:"host",clientID:"client",binding:"TLS-A"))
+        XCTAssertFalse(PairingProof.verify(proof,secret:secret,nonce:"nonce",hostID:"host",clientID:"client",binding:"TLS-B"))
+    }
     func testMalformedCredentialsAreRejected() {
         XCTAssertNil(PairingProof.make(secret:"bad",nonce:"n",hostID:"h",clientID:"c"))
         XCTAssertFalse(PairingProof.verify("bad",secret:PairingProof.newSecret(),nonce:"n",hostID:"h",clientID:"c"))

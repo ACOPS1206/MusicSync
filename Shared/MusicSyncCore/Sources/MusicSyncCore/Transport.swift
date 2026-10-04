@@ -4,6 +4,7 @@
 
 import Foundation
 import Network
+import Security
 
 public final class Peer {
     public let connection: NWConnection
@@ -20,7 +21,9 @@ public final class Peer {
     public func start() {
         connection.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
+            if case .ready = state, TLSSessionInfo.read(self.connection) == nil { self.cancel(); return }
             self.onState?(state)
+            if case .waiting = state { self.cancel() }
         }
         connection.start(queue: queue)
         receive()
@@ -54,10 +57,26 @@ public final class Peer {
 }
 public enum LAN {
     public static let service = "_musicsync._tcp"
-    public static func parameters() -> NWParameters {
+    private static func parameters(tls: NWProtocolTLS.Options) -> NWParameters {
         let tcp = NWProtocolTCP.Options(); tcp.noDelay = true
-        let parameters = NWParameters(tls: nil, tcp: tcp)
-        parameters.includePeerToPeer = false
+        sec_protocol_options_set_min_tls_protocol_version(tls.securityProtocolOptions,.TLSv13)
+        sec_protocol_options_set_max_tls_protocol_version(tls.securityProtocolOptions,.TLSv13)
+        sec_protocol_options_set_tls_tickets_enabled(tls.securityProtocolOptions,false)
+        sec_protocol_options_set_tls_resumption_enabled(tls.securityProtocolOptions,false)
+        let parameters = NWParameters(tls:tls,tcp:tcp); parameters.includePeerToPeer = false
         return parameters
     }
+    public static func hostParameters(identity: TLSIdentity) throws -> NWParameters {
+        guard let local = sec_identity_create(identity.identity) else { throw TLSError.identity }
+        let tls = NWProtocolTLS.Options()
+        sec_protocol_options_set_local_identity(tls.securityProtocolOptions,local)
+        return parameters(tls:tls)
+    }
+    public static func clientParameters(trust: TLSClientTrust) -> NWParameters {
+        let tls = NWProtocolTLS.Options()
+        sec_protocol_options_set_verify_block(tls.securityProtocolOptions,{ _, value, complete in complete(trust.verify(value)) },DispatchQueue(label:"MusicSync.TLS.verify"))
+        return parameters(tls:tls)
+    }
+    /// Browsing never establishes an audio connection.
+    public static func discoveryParameters() -> NWParameters { NWParameters.tcp }
 }
