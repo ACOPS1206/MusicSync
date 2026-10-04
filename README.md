@@ -4,20 +4,11 @@ MusicSync streams Mac system audio or music files hosted on iPhone to nearby Mac
 
 This is a functional first implementation, not a claim of measured ±3 ms acoustic synchronization. Compilation and protocol tests can be automated; permissions, process muting, physical speaker latency and long-run clock drift must also be tested on real devices.
 
-## License / 라이선스
+[English](README.md) | [한국어](README.ko.md)
 
-**MusicSync Attribution-NonCommercial-SourceSharing License 1.0** applies to this revision and subsequent revisions that identify it. Full terms are in [LICENSE](LICENSE); attribution details and an example are in [NOTICE](NOTICE).
+## License
 
-- **Attribution:** public code quotations, reuse, and redistribution must identify MusicSync, ACOPS1206, the repository, and this license; preserve notices and identify changes. Apps can show this in Help/About/Credits.
-- **NonCommercial:** commercial advantage or monetary-compensation use requires separate written permission. A free price tag or nonprofit organization status alone is not an exemption.
-- **Source sharing:** if you distribute a project incorporating protected MusicSync code or make it available to other users over a network, publish the **complete corresponding source of that combined software project**, not only the MusicSync files, under the same license. Provide a public source link without login/payment and identify the matching revision. This includes your application-specific modules and build instructions. Keep the source available while distributing/serving it and for at least three years afterwards.
-- **Scope:** unshared personal/private modifications need not be published. Separate programs communicating through ordinary network protocols, operating systems, Apple SDKs/frameworks, and independently licensed unmodified dependencies keep their own terms. Do not disclose credentials, signing keys or personal data. Document dependencies and how to build without your private signing credentials.
-
-This is a **custom source-available license**, not CC BY-NC-SA, GPL/AGPL, or an OSI-approved open-source license. CC BY-NC-SA is a familiar attribution/noncommercial/share-alike license, but it does not itself require software source delivery. Creative Commons [does not recommend CC licenses for software](https://creativecommons.org/faq/#can-i-apply-a-creative-commons-license-to-software). Standard GPL/AGPL permit commercial use; they do not meet the requested noncommercial restriction. The project's custom terms combine attribution, noncommercial use and complete project source sharing. The license text is authoritative; summaries do not guarantee enforceability in every jurisdiction.
-
-**한국어 요약:** 코드를 공개 인용하거나 재사용하여 배포할 때 MusicSync와 ACOPS1206, 원본 저장소, 라이선스 및 수정 내용을 표시해야 합니다. 비상업적 목적으로만 이용할 수 있습니다. 이 코드를 포함하는 프로젝트를 배포하거나 다른 사용자에게 네트워크 서비스로 제공하면, MusicSync 부분만이 아니라 결합된 프로젝트의 수정 가능한 전체 소스와 빌드 설정을 같은 라이선스로 공개해야 합니다. 공개 URL은 로그인·결제 없이 접근 가능해야 합니다. Apple 운영체제·SDK 등 별도 라이선스의 시스템 의존성이나 서명 키·개인정보는 공개 대상이 아닙니다. 개인적으로 수정하여 혼자 사용하는 경우에는 공개 의무가 없습니다. 비상업 제한이 있으므로 엄밀한 OSI 정의의 오픈소스가 아닌 **소스 공개형**입니다.
-
-**Historical licensing:** revisions through [`19b2125`](https://github.com/ACOPS1206/MusicSync/tree/19b21256cbd5d5783e82363ef89986056b6b5361) were published under MIT. The new conditions do not revoke those prior grants, and unchanged historical code remains reusable under its earlier terms. This change is prospective and does not rewrite Git history. 기존 MIT 배포분에 부여된 권한은 소급 취소하지 않습니다.
+[MIT](LICENSE), copyright (c) 2026 ACOPS1206. Commercial use, modification and redistribution are permitted; retain the copyright notice and license in copies or substantial portions. There is no noncommercial or derivative-source-disclosure requirement. See [NOTICE](NOTICE) for attribution and the full license for warranty terms. This revision is released under MIT; historical commits retain their original license notices.
 
 ## Repository
 
@@ -25,9 +16,20 @@ This is a **custom source-available license**, not CC BY-NC-SA, GPL/AGPL, or an 
 - `Shared/MusicSyncCore`: local Swift package; versioned framing, Network.framework peer transport, monotonic clock estimation, adaptive delay, bounded jitter queue and XCTest tests (including real loopback TCP ping/PCM transport).
 - `macOS/MusicSyncMac`: Mac entry point, CoreAudio process tap and ScreenCaptureKit alternative.
 - `iOS/MusicSynciOS`: iPhone entry point and native music library picker / import.
+- `iOS/MusicSyncWidgets`: WidgetKit Live Activity and Dynamic Island layouts.
 - `AppShared`: shared Host and Client models/views, Bonjour browsing, file decoder, stereo assignment, reconnection, scheduled AVAudioEngine output and bilingual Help.
 - `scripts`: reproducible project generator, builds, artifact validation and packaging.
 - `.github/workflows/build.yml`: tests and both application builds on push, PR and workflow_dispatch.
+
+## v0.4 — MIT, sync warnings and Live Activities
+
+This revision is MIT licensed, with an equivalent [Korean README](README.ko.md). Both apps show a real-time dashboard refreshed twice/second: session phase, PCM packet rate/bandwidth (one payload stream, excluding framing), totals, recent drops, scheduling error estimate and update time. The receiver also shows queued packets and scheduled audio duration.
+
+Sync warnings observe clock uncertainty above 25 ms, scheduling error/lateness above 10 ms, recent drops above 3 packets/s, clock information older than 3 seconds or streaming audio older than 1 second. Most warnings require three consecutive half-second checks and clear after three stable seconds. ScreenCaptureKit monitor mode warns immediately. Client warnings are reported to the Host. **This is risk estimation, not measurement of acoustic speaker alignment**; clock offset magnitude alone is not considered an error.
+
+The iOS app includes a real embedded `MusicSyncWidgets.appex` WidgetKit extension. ActivityKit starts/updates/ends a Live Activity for Host or Listen; Lock Screen and minimal/compact/expanded Dynamic Island layouts display session state, buffer, RTT, clock uncertainty, device count and warnings as space permits. Enable the toggle and start the session while the app is foreground. Local updates are throttled to about five seconds for metrics, at least one second for significant state changes; iOS decides actual presentation timing. A heartbeat refreshes unchanged state and content has a 15-second stale date. Stop/disconnect or disabling the toggle ends it; a dismissed activity stays dismissed until a new session. No push server is used. A Live Activity does not grant extra background execution.
+
+**LiveContainer may not register guest widget extensions**, so the Live Activity/Dynamic Island cannot be guaranteed there. In-app metrics still work. For normal installation preserve `PlugIns/MusicSyncWidgets.appex` and re-sign/provision both app and extension with compatible bundle identifiers. Devices without Dynamic Island use the Lock Screen. CI validates extension embedding and IPA layout; physical signed-device/LiveContainer presentation needs testing.
 
 ## iPhone hosting and stereo pair (v0.3)
 
@@ -77,7 +79,7 @@ The client reconnects automatically to the selected Bonjour service after a conn
 
 The apps explain Local Network and capture access before users start the corresponding operation. Both Info.plists declare `NSLocalNetworkUsageDescription` and `NSBonjourServices` (`_musicsync._tcp`). macOS declares `NSAudioCaptureUsageDescription` and a screen capture explanation. System Audio Recording / Screen & System Audio Recording is managed by macOS Privacy & Security. A denial may require changing System Settings and relaunching. Neither app records microphone input, so microphone permission is not requested.
 
-The macOS application deliberately uses no App Sandbox entitlement: the global process tap/private aggregate path must be validated outside App Sandbox. Empty entitlements are committed for both apps. iOS uses a playback AVAudioSession and `UIBackgroundModes = audio`; no multicast entitlement is needed for NWBrowser Bonjour. Developer provisioning entitlements are added when you sign for device installation.
+The macOS application deliberately uses no App Sandbox entitlement: the global process tap/private aggregate path must be validated outside App Sandbox. Empty app entitlements are committed; Live Activity support uses NSSupportsLiveActivities and the embedded WidgetKit extension. iOS uses a playback AVAudioSession and `UIBackgroundModes = audio`; no multicast entitlement is needed for NWBrowser Bonjour. Developer provisioning entitlements are added when you sign for device installation.
 
 ## Synchronization
 
@@ -125,7 +127,7 @@ Open **Actions → Build MusicSync → successful run → Artifacts**:
 
 The workflow uses macos-26 and Xcode 26.6, checks that project generation causes no diff, runs protocol tests, then builds with `CODE_SIGNING_ALLOWED=NO` / `CODE_SIGNING_REQUIRED=NO`. The iOS IPA contains `Payload/MusicSync.app`, no developer signature or provisioning profile. It **must be signed/provisioned** with a suitable sideloading tool or rebuilt with Xcode signing before a normal iPhone can install/run it. An unsigned IPA is not directly installable.
 
-Mac packaging applies an ad-hoc signature (no certificate), verifies it, and preserves bundle permissions using ditto. It is not Developer ID signed or notarized; macOS may require an explicit Open / Allow Anyway decision for a downloaded app. CI does not launch apps or grant capture permissions on the runner. Packaging verifies executable presence, minimum OS, IPA layout and Mac signature.
+Mac packaging applies an ad-hoc signature (no certificate), verifies it, and preserves bundle permissions using ditto. It is not Developer ID signed or notarized; macOS may require an explicit Open / Allow Anyway decision for a downloaded app. CI does not launch apps or grant capture permissions on the runner. Packaging verifies executable presence, minimum OS, localized/license resources, embedded WidgetKit extension and matching bundle IDs/versions, IPA layout and Mac signature.
 
 ## Known limitations / hardware validation still needed
 
