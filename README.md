@@ -4,6 +4,21 @@ MusicSync streams Mac system audio or music files hosted on iPhone to nearby Mac
 
 This is a functional first implementation, not a claim of measured ±3 ms acoustic synchronization. Compilation and protocol tests can be automated; permissions, process muting, physical speaker latency and long-run clock drift must also be tested on real devices.
 
+## License / 라이선스
+
+**MusicSync Attribution-NonCommercial-SourceSharing License 1.0** applies to this revision and subsequent revisions that identify it. Full terms are in [LICENSE](LICENSE); attribution details and an example are in [NOTICE](NOTICE).
+
+- **Attribution:** public code quotations, reuse, and redistribution must identify MusicSync, ACOPS1206, the repository, and this license; preserve notices and identify changes. Apps can show this in Help/About/Credits.
+- **NonCommercial:** commercial advantage or monetary-compensation use requires separate written permission. A free price tag or nonprofit organization status alone is not an exemption.
+- **Source sharing:** if you distribute a project incorporating protected MusicSync code or make it available to other users over a network, publish the **complete corresponding source of that combined software project**, not only the MusicSync files, under the same license. Provide a public source link without login/payment and identify the matching revision. This includes your application-specific modules and build instructions. Keep the source available while distributing/serving it and for at least three years afterwards.
+- **Scope:** unshared personal/private modifications need not be published. Separate programs communicating through ordinary network protocols, operating systems, Apple SDKs/frameworks, and independently licensed unmodified dependencies keep their own terms. Do not disclose credentials, signing keys or personal data. Document dependencies and how to build without your private signing credentials.
+
+This is a **custom source-available license**, not CC BY-NC-SA, GPL/AGPL, or an OSI-approved open-source license. CC BY-NC-SA is a familiar attribution/noncommercial/share-alike license, but it does not itself require software source delivery. Creative Commons [does not recommend CC licenses for software](https://creativecommons.org/faq/#can-i-apply-a-creative-commons-license-to-software). Standard GPL/AGPL permit commercial use; they do not meet the requested noncommercial restriction. The project's custom terms combine attribution, noncommercial use and complete project source sharing. The license text is authoritative; summaries do not guarantee enforceability in every jurisdiction.
+
+**한국어 요약:** 코드를 공개 인용하거나 재사용하여 배포할 때 MusicSync와 ACOPS1206, 원본 저장소, 라이선스 및 수정 내용을 표시해야 합니다. 비상업적 목적으로만 이용할 수 있습니다. 이 코드를 포함하는 프로젝트를 배포하거나 다른 사용자에게 네트워크 서비스로 제공하면, MusicSync 부분만이 아니라 결합된 프로젝트의 수정 가능한 전체 소스와 빌드 설정을 같은 라이선스로 공개해야 합니다. 공개 URL은 로그인·결제 없이 접근 가능해야 합니다. Apple 운영체제·SDK 등 별도 라이선스의 시스템 의존성이나 서명 키·개인정보는 공개 대상이 아닙니다. 개인적으로 수정하여 혼자 사용하는 경우에는 공개 의무가 없습니다. 비상업 제한이 있으므로 엄밀한 OSI 정의의 오픈소스가 아닌 **소스 공개형**입니다.
+
+**Historical licensing:** revisions through [`19b2125`](https://github.com/ACOPS1206/MusicSync/tree/19b21256cbd5d5783e82363ef89986056b6b5361) were published under MIT. The new conditions do not revoke those prior grants, and unchanged historical code remains reusable under its earlier terms. This change is prospective and does not rewrite Git history. 기존 MIT 배포분에 부여된 권한은 소급 취소하지 않습니다.
+
 ## Repository
 
 - `MusicSync.xcodeproj`: shared `MusicSyncMac` and `MusicSynciOS` schemes.

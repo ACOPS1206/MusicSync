@@ -1,0 +1,27 @@
+MusicSync
+Copyright (c) 2026 ACOPS1206
+Original source: https://github.com/ACOPS1206/MusicSync
+License: MusicSync Attribution-NonCommercial-SourceSharing License 1.0
+SPDX-License-Identifier: LicenseRef-MusicSync-Attribution-NonCommercial-SourceSharing-1.0
+License text: https://github.com/ACOPS1206/MusicSync/blob/main/LICENSE
+
+Suggested attribution:
+"Based on MusicSync by ACOPS1206 (https://github.com/ACOPS1206/MusicSync),
+licensed under the MusicSync Attribution-NonCommercial-SourceSharing
+License 1.0. Changes: [describe your changes and identify their author]."
+
+사용 및 공개 인용 시 출처 표시 예시:
+"ACOPS1206의 MusicSync(https://github.com/ACOPS1206/MusicSync)를 바탕으로 작성.
+MusicSync 출처표시-비상업-소스공개 라이선스 1.0 적용.
+수정 내용과 작성자: [수정 내용 / 작성자]."
+
+NonCommercial use only. Distributed or network-served Covered Projects must
+publish their complete Corresponding Source under the same license. Preserve
+this notice, the LICENSE, copyright notices, and warranty disclaimers. The
+material is provided AS IS; see LICENSE for the full disclaimer and terms.
+
+Earlier revisions through commit 19b21256cbd5d5783e82363ef89986056b6b5361 were
+published under MIT. The new license does not revoke those historical grants.
+System frameworks and independently licensed third-party material retain their
+own terms. This is a custom source-available license, not CC BY-NC-SA or an
+OSI-approved open-source license.

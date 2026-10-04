@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: LicenseRef-MusicSync-Attribution-NonCommercial-SourceSharing-1.0
+# Copyright (c) 2026 ACOPS1206
+# Source: https://github.com/ACOPS1206/MusicSync
+
 """Validate products, preserve bundle modes/symlinks, produce unsigned IPA + ad-hoc Mac app."""
 import pathlib, plistlib, shutil, subprocess, sys, zipfile
 
@@ -16,6 +20,8 @@ def verify(app, platform):
         for filename in ['Localizable.strings','InfoPlist.strings']:
             if not (resources/(language+'.lproj')/filename).is_file():
                 raise RuntimeError('Missing localization: '+language+'/'+filename)
+    for filename in ['LICENSE','NOTICE']:
+        if not (resources/filename).is_file(): raise RuntimeError('Missing license/attribution: '+filename)
     return info
 
 def main():

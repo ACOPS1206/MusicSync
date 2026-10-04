@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: LicenseRef-MusicSync-Attribution-NonCommercial-SourceSharing-1.0
+# Copyright (c) 2026 ACOPS1206
+# Source: https://github.com/ACOPS1206/MusicSync
+
 """Deterministic Xcode project generation; Python stdlib only. Commit generated project."""
 import hashlib, pathlib, plistlib
 root = pathlib.Path(__file__).resolve().parents[1]
@@ -37,7 +41,11 @@ for platform, folder, app, scheme in [('macOS','macOS/MusicSyncMac','MusicSync-m
         variant=add(scheme+filename+'variant','isa = PBXVariantGroup; name = '+filename+'; children = '+array(variants)+'; sourceTree = "<group>";')
         groups.append(variant)
         resourcefiles.append(add(scheme+filename+'resource','isa = PBXBuildFile; fileRef = '+variant+';'))
-    resourcephase=add(scheme+'resources','isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = '+array(resourcefiles)+'; runOnlyForDeploymentPostprocessing = 0;')
+    for filename in ['LICENSE','NOTICE']:
+        ref=add(scheme+filename+'ref','isa = PBXFileReference; lastKnownFileType = text; path = '+filename+'; sourceTree = SOURCE_ROOT;')
+        groups.append(ref)
+        resourcefiles.append(add(scheme+filename+'resource','isa = PBXBuildFile; fileRef = '+ref+';'))
+    resourcephase=add(scheme+'resources' ,'isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = '+array(resourcefiles)+'; runOnlyForDeploymentPostprocessing = 0;')
     configs=[]
     for config in ['Debug','Release']:
         settings={'PRODUCT_NAME':app,'PRODUCT_BUNDLE_IDENTIFIER':'dev.acops.MusicSync.'+platform,'INFOPLIST_FILE':folder+'/Info.plist','CODE_SIGN_ENTITLEMENTS':folder+'/MusicSync.entitlements','CODE_SIGN_STYLE':'Automatic','SWIFT_VERSION':'5.0','SWIFT_STRICT_CONCURRENCY':'minimal','GENERATE_INFOPLIST_FILE':'NO','CURRENT_PROJECT_VERSION':'3','MARKETING_VERSION':'0.3.0','ENABLE_USER_SCRIPT_SANDBOXING':'YES','SWIFT_OPTIMIZATION_LEVEL':'-Onone' if config=='Debug' else '-O','SDKROOT':'macosx' if platform=='macOS' else 'iphoneos','SUPPORTED_PLATFORMS':'macosx' if platform=='macOS' else 'iphoneos iphonesimulator','LD_RUNPATH_SEARCH_PATHS':'$(inherited) @executable_path/Frameworks' if platform=='iOS' else '$(inherited) @executable_path/../Frameworks','DEBUG_INFORMATION_FORMAT':'dwarf-with-dsym' if config=='Release' else 'dwarf'}

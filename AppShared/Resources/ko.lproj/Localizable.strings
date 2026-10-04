@@ -127,3 +127,8 @@
 "Use the Host test pulses to adjust residual speaker delay. Positive values play this Client later." = "호스트의 테스트 펄스로 남은 스피커 지연을 보정하세요. 양수로 설정하면 이 클라이언트가 더 늦게 재생합니다.";
 "Paste the Host connection address, for example MacBook.local:49152 or 192.168.1.20:49152." = "호스트 연결 주소를 붙여넣으세요. 예: MacBook.local:49152 또는 192.168.1.20:49152.";
 "In stereo pair mode, Test Tone plays a shared alignment pulse, then a lower left-only tone, then a higher right-only tone each second." = "스테레오 페어 모드의 테스트 톤은 매초 양쪽 동기화 펄스, 낮은 왼쪽 전용 톤, 높은 오른쪽 전용 톤 순서로 재생합니다.";
+"License & attribution" = "라이선스 및 출처";
+"MusicSync by ACOPS1206" = "ACOPS1206의 MusicSync";
+"Noncommercial use only. Credit MusicSync when sharing or reusing code. Distributed or network-served projects incorporating this code must publish their complete corresponding source under the same MusicSync license." = "비상업적 목적으로만 사용할 수 있습니다. 코드 공개 인용·재사용 시 MusicSync 출처를 표시하세요. 이 코드를 포함한 프로젝트를 배포하거나 네트워크 서비스로 제공하면 해당 프로젝트의 전체 소스를 같은 MusicSync 라이선스로 공개해야 합니다.";
+"Source code" = "소스 코드";
+"Full license" = "라이선스 전문";

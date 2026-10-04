@@ -1,4 +1,8 @@
 #!/bin/bash
+# SPDX-License-Identifier: LicenseRef-MusicSync-Attribution-NonCommercial-SourceSharing-1.0
+# Copyright (c) 2026 ACOPS1206
+# Source: https://github.com/ACOPS1206/MusicSync
+
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p dist

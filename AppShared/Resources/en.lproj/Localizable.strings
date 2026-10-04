@@ -127,3 +127,8 @@
 "Use the Host test pulses to adjust residual speaker delay. Positive values play this Client later." = "Use the Host test pulses to adjust residual speaker delay. Positive values play this Client later.";
 "Paste the Host connection address, for example MacBook.local:49152 or 192.168.1.20:49152." = "Paste the Host connection address, for example MacBook.local:49152 or 192.168.1.20:49152.";
 "In stereo pair mode, Test Tone plays a shared alignment pulse, then a lower left-only tone, then a higher right-only tone each second." = "In stereo pair mode, Test Tone plays a shared alignment pulse, then a lower left-only tone, then a higher right-only tone each second.";
+"License & attribution" = "License & attribution";
+"MusicSync by ACOPS1206" = "MusicSync by ACOPS1206";
+"Noncommercial use only. Credit MusicSync when sharing or reusing code. Distributed or network-served projects incorporating this code must publish their complete corresponding source under the same MusicSync license." = "Noncommercial use only. Credit MusicSync when sharing or reusing code. Distributed or network-served projects incorporating this code must publish their complete corresponding source under the same MusicSync license.";
+"Source code" = "Source code";
+"Full license" = "Full license";

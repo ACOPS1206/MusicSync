@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: LicenseRef-MusicSync-Attribution-NonCommercial-SourceSharing-1.0
+// Copyright (c) 2026 ACOPS1206
+// Source: https://github.com/ACOPS1206/MusicSync
+
 import SwiftUI
 struct HelpView: View {
     @Environment(\.dismiss) private var dismiss
@@ -33,6 +37,12 @@ struct HelpView: View {
                 }
                 Section("What the numbers mean") {
                     Text("Shared buffer is the intentional playback delay. RTT is network round-trip time. Clock offset converts Mac timestamps to iPhone time. Jitter describes network variation. Clock uncertainty is an estimate, not a measured speaker error. Dropped frames arrived too late or could not be scheduled.")
+                }
+                Section("License & attribution") {
+                    Text("MusicSync by ACOPS1206")
+                    Text("Noncommercial use only. Credit MusicSync when sharing or reusing code. Distributed or network-served projects incorporating this code must publish their complete corresponding source under the same MusicSync license.")
+                    Link("Source code", destination: URL(string: "https://github.com/ACOPS1206/MusicSync")!)
+                    Link("Full license", destination: URL(string: "https://github.com/ACOPS1206/MusicSync/blob/main/LICENSE")!)
                 }
                 Section("Language") {
                     Text("MusicSync follows the system app language and supports English and Korean. In LiveContainer, the host language configuration may affect the guest. Restart the app after changing language.")
