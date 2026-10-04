@@ -35,7 +35,7 @@ struct ConnectedDevice: Identifiable {
     private var phase = 0.0
     private var observer: NSObjectProtocol?
     init() {
-        observer = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+        observer = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated {
             guard let self else { return }
             // Restore tapped process output before the application exits.
             if let capture = self.capture {
@@ -43,7 +43,7 @@ struct ConnectedDevice: Identifiable {
                 Task.detached { await capture.stop(); semaphore.signal() }
                 _ = semaphore.wait(timeout: .now() + 1)
             }
-        }
+         } }
     }
     func startHost() {
         guard !active else { return }
@@ -51,15 +51,15 @@ struct ConnectedDevice: Identifiable {
         do {
             let listener = try NWListener(using: LAN.parameters())
             listener.service = NWListener.Service(name: Host.current().localizedName ?? "MusicSync Mac", type: LAN.service)
-            listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
-            listener.stateUpdateHandler = { [weak self] state in
+            listener.newConnectionHandler = { [weak self] connection in MainActor.assumeIsolated { self?.accept(connection)  } }
+            listener.stateUpdateHandler = { [weak self] state in MainActor.assumeIsolated {
                 guard let self else { return }
                 switch state {
                 case .ready: self.active = true; self.status = "Host available on LAN"
                 case .failed(let error): self.error = error.localizedDescription; self.stopHost()
                 default: break
                 }
-            }
+             } }
             self.listener = listener; listener.start(queue: .main)
             status = "Starting Bonjour…"
         } catch { self.error = error.localizedDescription }
@@ -115,7 +115,7 @@ struct ConnectedDevice: Identifiable {
             if mode == 0 || testTone { try player.start() }
             if testTone {
                 streaming = true; status = "Synchronized test tone"
-                toneTimer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { [weak self] _ in self?.tone() }
+                toneTimer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.tone()  } }
             } else {
                 let source: AudioCapture
                 if mode == 0 { source = TapCapture() } else {

@@ -41,29 +41,29 @@ struct NearbyMac: Identifiable {
     private var lastEpoch: UInt64?
     private var lastAudio = 0.0
     init() {
-        routeObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] _ in self?.restartAudio() }
-        interruptionObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] notification in
+        routeObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.restartAudio()  } }
+        interruptionObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] notification in MainActor.assumeIsolated {
             guard let type = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt else { return }
             if type == AVAudioSession.InterruptionType.began.rawValue {
                 self?.player.stop(); self?.buffer = JitterQueue(); self?.status = "Audio interrupted"
             } else { self?.restartAudio() }
-        }
+         } }
     }
     func search() {
         guard browser == nil else { return }
         searching = true; error = nil
         let browser = NWBrowser(for: .bonjour(type: LAN.service, domain: nil), using: LAN.parameters())
-        browser.browseResultsChangedHandler = { [weak self] results, _ in
+        browser.browseResultsChangedHandler = { [weak self] results, _ in MainActor.assumeIsolated {
             guard let self else { return }
             self.nearby = results.compactMap { result in
                 if case let .service(name, _, _, _) = result.endpoint { return NearbyMac(name: name, endpoint: result.endpoint) }
                 return nil
             }.sorted { $0.name < $1.name }
             if self.wantConnection, self.peer == nil, let found = self.nearby.first(where: { $0.name == self.selectedName }) { self.open(found) }
-        }
-        browser.stateUpdateHandler = { [weak self] state in
+         } }
+        browser.stateUpdateHandler = { [weak self] state in MainActor.assumeIsolated {
             if case .failed(let error) = state { self?.error = error.localizedDescription; self?.searching = false }
-        }
+         } }
         self.browser = browser; browser.start(queue: .main); status = "Searching nearby Macs…"
     }
     func connect(_ mac: NearbyMac) {
@@ -124,7 +124,7 @@ struct NearbyMac: Identifiable {
     }
     private func startTimers() {
         pingTimer?.invalidate(); drainTimer?.invalidate()
-        pingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+        pingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in MainActor.assumeIsolated {
             guard let self else { return }
             self.pings += 1
             if self.pings > 16 && self.pings % 10 != 0 { return }
@@ -133,8 +133,8 @@ struct NearbyMac: Identifiable {
             self.pendingPings.removeAll { time - $0 > 3 }
             var ping = Message("ping"); ping.t1 = time; self.peer?.send(ping)
             if self.connected && self.pendingPings.count >= 3 && time - self.pendingPings[0] > 2 { self.lost() }
-        }
-        drainTimer = Timer.scheduledTimer(withTimeInterval: 0.005, repeats: true) { [weak self] _ in self?.drain() }
+         } }
+        drainTimer = Timer.scheduledTimer(withTimeInterval: 0.005, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.drain()  } }
         // Run during native control tracking as well as the default runloop mode.
         if let pingTimer { RunLoop.main.add(pingTimer, forMode: .common) }
         if let drainTimer { RunLoop.main.add(drainTimer, forMode: .common) }

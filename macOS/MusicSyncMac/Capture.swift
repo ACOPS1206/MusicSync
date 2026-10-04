@@ -73,7 +73,7 @@ final class TapCapture: AudioCapture {
             var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyTranslatePIDToProcessObject, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
             try check(AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, UInt32(MemoryLayout<pid_t>.size), &pid, &size, &ownProcess), "Resolve own audio process")
             guard ownProcess != kAudioObjectUnknown else { throw CaptureFailure.unavailable }
-            let description = CATapDescription(stereoGlobalTapButExcludeProcesses: [NSNumber(value: ownProcess)])
+            let description = CATapDescription(stereoGlobalTapButExcludeProcesses: [ownProcess])
             description.name = "MusicSync synchronized system audio"
             description.uuid = UUID()
             description.isPrivate = true
