@@ -5,6 +5,7 @@
 import SwiftUI
 
 struct MusicSyncRootView: View {
+    @AppStorage("appLanguage") private var appLanguage = "system"
     @StateObject private var host = HostModel()
     @StateObject private var client = ClientModel()
     #if os(iOS)
@@ -32,6 +33,7 @@ struct MusicSyncRootView: View {
             if liveEnabled && liveSnapshot.active { Text(liveActivity.availability).font(.caption2).foregroundStyle(.secondary).padding(.vertical,4) }
         }
         #endif
+        .environment(\.locale, appLanguage == "system" ? Locale.current : Locale(identifier: appLanguage))
         .disabled(host.busy)
         .onChange(of: role) { _, newRole in
             if newRole == 0 { host.stopHost() }

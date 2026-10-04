@@ -16,6 +16,7 @@ struct NearbyMac: Identifiable {
     @Published var sessionID = UUID()
     @Published var sessionPhase = "Waiting"
     @Published var syncIssues: [SyncIssue] = []
+    @Published var healthInput = SyncHealthInput()
     @Published var traffic = TrafficSnapshot()
     @Published var bufferCount = 0
     @Published var bufferAheadMS = 0.0
@@ -238,7 +239,7 @@ struct NearbyMac: Identifiable {
             var input = SyncHealthInput(); input.uncertainty = uncertainty; input.schedulingError = peakScheduleError
             input.dropRate = traffic.dropsPerSecond; input.clockAge = lastPong > 0 ? now - lastPong : 0
             input.streaming = sessionPhase == "Streaming"; input.audioAge = lastAudio > 0 ? now - lastAudio : 0
-            input.monitor = monitorMode; health.update(input,now:now); syncIssues = health.issues
+            input.monitor = monitorMode; healthInput = input; health.update(input,now:now); syncIssues = health.issues
             peakScheduleError = 0; lastUpdated = Date()
             if lastAudio > 0 { status = now - lastAudio < 1 ? tr("Streaming • scheduled playback") : tr("Connected • no recent audio") }
             lastUI = now

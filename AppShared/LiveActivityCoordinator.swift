@@ -70,13 +70,13 @@ struct LiveSessionSnapshot: Equatable {
 }
 extension ClientModel {
     var liveSnapshot: LiveSessionSnapshot {
-        LiveSessionSnapshot(role:"Listen",peerName:selectedName ?? "MusicSync",sessionID:sessionID.uuidString,active:selectedName != nil && sessionPhase != "Stopped",state:.init(phase:sessionPhase,latencyMS:Int(latency * 1000),rttMS:Int(rtt * 1000),uncertaintyMS:Int(uncertainty * 1000),deviceCount:connected ? 1 : 0,dropped:dropped,warning:!syncIssues.isEmpty))
+        LiveSessionSnapshot(role:"Listen",peerName:selectedName ?? "MusicSync",sessionID:sessionID.uuidString,active:selectedName != nil && sessionPhase != "Stopped",state:.init(phase:sessionPhase,latencyMS:Int(latency * 1000),rttMS:Int(rtt * 1000),uncertaintyMS:Int(uncertainty * 1000),deviceCount:connected ? 1 : 0,dropped:dropped,warning:!syncIssues.isEmpty,offsetMS:offset * 1000,jitterMS:jitter * 1000))
     }
 }
 extension HostModel {
     var liveSnapshot: LiveSessionSnapshot {
         let ready = devices.filter(\.ready)
-        return LiveSessionSnapshot(role:"Host",peerName:"MusicSync",sessionID:sessionID.uuidString,active:active,state:.init(phase:sessionPhase,latencyMS:Int(latency * 1000),rttMS:Int((ready.map(\.rtt).max() ?? 0) * 1000),uncertaintyMS:Int((ready.map { $0.rtt / 2 + $0.jitter }.max() ?? 0) * 1000),deviceCount:devices.count,dropped:localDrops,warning:!syncIssues.isEmpty))
+        return LiveSessionSnapshot(role:"Host",peerName:"MusicSync",sessionID:sessionID.uuidString,active:active,state:.init(phase:sessionPhase,latencyMS:Int(latency * 1000),rttMS:Int((timingDevice?.rtt ?? 0) * 1000),uncertaintyMS:Int((ready.map { $0.rtt / 2 + $0.jitter }.max() ?? 0) * 1000),deviceCount:devices.count,dropped:localDrops,warning:!syncIssues.isEmpty,offsetMS:timingDevice.map { $0.offset * 1000 },jitterMS:timingDevice.map { $0.jitter * 1000 }))
     }
 }
 #endif

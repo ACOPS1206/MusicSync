@@ -4,6 +4,7 @@
 
 import SwiftUI
 struct HelpView: View {
+    @AppStorage("appLanguage") private var appLanguage = "system"
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         NavigationStack {
@@ -53,7 +54,12 @@ struct HelpView: View {
                     Link("Full license", destination: URL(string: "https://github.com/ACOPS1206/MusicSync/blob/main/LICENSE")!)
                 }
                 Section("Language") {
-                    Text("MusicSync follows the system app language and supports English and Korean. In LiveContainer, the host language configuration may affect the guest. Restart the app after changing language.")
+                    Picker("App language", selection: $appLanguage) {
+                        Text("Follow System").tag("system")
+                        Text(verbatim: "English").tag("en")
+                        Text(verbatim: "한국어").tag("ko")
+                    }
+                    Text("Choose English, Korean, or the system language. Live Activity follows the system app language. Reconnect after changing language to refresh connection messages.")
                 }
             }.navigationTitle("Help")
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }

@@ -10,33 +10,25 @@ import SwiftUI
 struct MusicSyncLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: MusicSyncActivityAttributes.self) { context in
-            VStack(alignment:.leading,spacing:10) {
+            VStack(alignment:.leading,spacing:6) {
                 HStack {
-                    Label("MusicSync",systemImage:context.state.warning ? "exclamationmark.triangle.fill" : "waveform")
+                    Label(sessionTitle(context.isStale ? "Status may be outdated" : context.state.phase),systemImage:context.state.warning ? "exclamationmark.triangle.fill" : "waveform")
                     Spacer(); Text(tr(context.attributes.role))
                 }.font(.headline)
-                Text(context.attributes.peerName).font(.caption).lineLimit(1)
-                status(context)
-                HStack {
-                    Text(String(format:tr("Buffer %d ms"),context.state.latencyMS))
-                    Spacer(); Text(String(format:tr("Devices %d"),context.state.deviceCount))
-                }.font(.caption).monospacedDigit()
+                if context.attributes.peerName != "MusicSync" { Text(context.attributes.peerName).font(.caption).lineLimit(1) }
+                timing(context.state)
                 if context.state.warning { Text("Sync warning • check the app").font(.caption).foregroundStyle(.orange) }
             }.padding().activityBackgroundTint(.black.opacity(0.85)).activitySystemActionForegroundColor(.white).foregroundStyle(.white)
         } dynamicIsland: { context in
             DynamicIsland {
-                DynamicIslandExpandedRegion(.leading) { Label("MusicSync",systemImage:"waveform").font(.caption) }
+                DynamicIslandExpandedRegion(.leading) { Text(sessionTitle(context.isStale ? "Status may be outdated" : context.state.phase)).font(.caption).lineLimit(1).minimumScaleFactor(0.7) }
                 DynamicIslandExpandedRegion(.trailing) {
                     Text(String(format:"%d ms",context.state.latencyMS)).monospacedDigit()
                 }
                 DynamicIslandExpandedRegion(.center) { Text(tr(context.attributes.role)).font(.caption) }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment:.leading,spacing:6) {
-                        status(context)
-                        HStack {
-                            Text(String(format:tr("RTT %d ms"),context.state.rttMS))
-                            Spacer(); Text(String(format:tr("Clock ≥ %d ms"),context.state.uncertaintyMS))
-                        }.font(.caption).monospacedDigit()
+                        timing(context.state)
                         if context.state.warning { Text("Sync warning • check the app").font(.caption).foregroundStyle(.orange) }
                     }
                 }
@@ -50,7 +42,11 @@ struct MusicSyncLiveActivity: Widget {
             .keylineTint(context.state.warning ? .orange : .accentColor)
         }
     }
-    private func status(_ context: ActivityViewContext<MusicSyncActivityAttributes>) -> some View {
-        Label(context.isStale ? tr("Status may be outdated") : tr(context.state.phase),systemImage:context.isStale ? "clock.badge.exclamationmark" : "speaker.wave.2")
+    private func timing(_ state: MusicSyncActivityAttributes.ContentState) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(String(format: tr("Buffer %d ms · RTT %d ms"), state.latencyMS, state.rttMS))
+            Text(String(format: tr("Offset %@ ms · Jitter %@ ms"), state.offsetMS.map { String(format: "%+.1f", $0) } ?? "—", state.jitterMS.map { String(format: "%.1f", $0) } ?? "—"))
+            Text(String(format: tr("Uncertainty %d ms · Drops %d · Devices %d"), state.uncertaintyMS, state.dropped, state.deviceCount))
+        }.font(.caption2).monospacedDigit().foregroundStyle(.secondary)
     }
 }

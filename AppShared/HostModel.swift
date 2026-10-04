@@ -29,6 +29,7 @@ struct ConnectedDevice: Identifiable {
     @Published var sessionID = UUID()
     @Published var sessionPhase = "Waiting"
     @Published var syncIssues: [SyncIssue] = []
+    @Published var healthInput = SyncHealthInput()
     @Published var traffic = TrafficSnapshot()
     @Published var schedulingErrorMS = 0.0
     @Published var localDrops = 0
@@ -278,6 +279,7 @@ struct ConnectedDevice: Identifiable {
         }
         if now - lastPublished > 1 { latency = delay.target; lastPublished = now }
     }
+    var timingDevice: ConnectedDevice? { devices.filter(\.ready).max { $0.rtt / 2 + $0.jitter < $1.rtt / 2 + $1.jitter } }
     private func startStatusTimer() {
         statusTimer?.invalidate()
         statusTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.refreshStatus() } }
@@ -292,6 +294,7 @@ struct ConnectedDevice: Identifiable {
         input.clockAge = devices.filter(\.ready).map { now - $0.lastStats }.max() ?? 0
         input.streaming = streaming && sessionPhase == "Streaming"; input.audioAge = lastPCM > 0 ? now - lastPCM : 0
         input.dropRate = traffic.dropsPerSecond; input.schedulingError = peakScheduleError; input.monitor = isMonitor
+        healthInput = input
         health.update(input,now:now)
         syncIssues = SyncIssue.allCases.filter { issue in health.issues.contains(issue) || devices.contains { $0.syncIssues.contains(issue) } }
         peakScheduleError = 0; lastUpdated = Date()

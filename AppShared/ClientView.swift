@@ -16,9 +16,9 @@ struct ClientView: View {
                         Button("Find Nearby Hosts") { model.search() }.buttonStyle(.glassProminent)
                     }
                 }
-                SyncWarningView(issues:model.syncIssues)
+                SyncWarningView(issues:model.syncIssues,input:model.healthInput,rtt:model.rtt,jitter:model.jitter)
                 if model.selectedName != nil {
-                    RealtimeStatusView(phase:model.sessionPhase,traffic:model.traffic,drops:model.dropped,schedulingErrorMS:model.schedulingErrorMS,updated:model.lastUpdated)
+                    RealtimeStatusView(phase:model.sessionPhase,traffic:model.traffic,drops:model.dropped,schedulingErrorMS:model.schedulingErrorMS,updated:model.lastUpdated,timing:TimingSummaryView(latency:model.latency,rtt:model.rtt,offset:model.offset,jitter:model.jitter,uncertainty:model.uncertainty,drops:model.dropped))
                     Section("Audio queue") {
                         LabeledContent("Buffered packets", value: String(model.bufferCount))
                         LabeledContent("Scheduled ahead", value: String(format:"%.0f ms",model.bufferAheadMS))
@@ -55,15 +55,6 @@ struct ClientView: View {
                     #endif
                 }
                 if model.selectedName != nil {
-                    Section("Latency & Synchronization") {
-                        metric("Shared buffer",model.latency)
-                        metric("RTT",model.rtt)
-                        metric("Clock offset (Host − Client)",model.offset)
-                        metric("Network jitter",model.jitter)
-                        metric("Clock uncertainty estimate",model.uncertainty)
-                        LabeledContent("Dropped frames",value:String(model.dropped))
-                        Text("Clock uncertainty is an estimate, not a measured speaker-to-speaker error. Keep both devices on built-in speakers.").font(.caption).foregroundStyle(.secondary)
-                    }
                     Section("Speaker layout") {
                         Picker("Output channel", selection: $model.channelOverride) {
                             ForEach(ChannelSelection.allCases) { channel in Text(channel.title).tag(channel) }
@@ -78,14 +69,12 @@ struct ClientView: View {
                     Section { Button("Disconnect",role:.destructive) { model.disconnect() }.buttonStyle(.glass) }
                 }
                 if let error = model.error { Section("Attention") { Text(error).foregroundStyle(.red) } }
-            }.navigationTitle("MusicSync")
+                ProjectLinkView()
+            }.navigationTitle(sessionTitle(model.sessionPhase))
             .toolbar { ToolbarItem(placement: .primaryAction) {
                 Button { showingHelp = true } label: { Label("Help", systemImage: "questionmark.circle") }
             } }
             .sheet(isPresented: $showingHelp) { HelpView() }
         }
-    }
-    private func metric(_ title: String, _ seconds: Double) -> some View {
-        LabeledContent(tr(title),value:String(format:"%.1f ms",seconds * 1000)).monospacedDigit()
     }
 }

@@ -38,8 +38,8 @@ struct HostView: View {
                         }.buttonStyle(.glass)
                     }
                 }
-                SyncWarningView(issues:model.syncIssues)
-                if model.active { RealtimeStatusView(phase:model.sessionPhase,traffic:model.traffic,drops:model.localDrops,schedulingErrorMS:model.schedulingErrorMS,updated:model.lastUpdated) }
+                SyncWarningView(issues:model.syncIssues,input:model.healthInput,rtt:model.timingDevice?.rtt ?? 0,jitter:model.timingDevice?.jitter ?? 0,remoteIssues:Array(Set(model.devices.flatMap(\.syncIssues))))
+                if model.active { RealtimeStatusView(phase:model.sessionPhase,traffic:model.traffic,drops:model.localDrops,schedulingErrorMS:model.schedulingErrorMS,updated:model.lastUpdated,timing:TimingSummaryView(latency:model.latency,rtt:model.timingDevice?.rtt ?? 0,offset:model.timingDevice?.offset ?? 0,jitter:model.timingDevice?.jitter ?? 0,uncertainty:model.healthInput.uncertainty,drops:model.localDrops,peerName:model.timingDevice?.name)) }
                 LiveActivitySettingsView()
                 Section("Connected Devices") {
                     if model.devices.isEmpty { Text("Connect from MusicSync on another iPhone or Mac.").foregroundStyle(.secondary) }
@@ -105,7 +105,8 @@ struct HostView: View {
                 }
                 #endif
                 if let error = model.error { Section("Attention") { Text(error).foregroundStyle(.red).textSelection(.enabled) } }
-            }.formStyle(.grouped).navigationTitle("MusicSync")
+                ProjectLinkView()
+            }.formStyle(.grouped).navigationTitle(sessionTitle(model.sessionPhase))
             .toolbar { ToolbarItem(placement: .primaryAction) {
                 Button { showingHelp = true } label: { Label("Help", systemImage: "questionmark.circle") }
             } }

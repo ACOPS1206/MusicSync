@@ -13,6 +13,8 @@ struct MusicSyncActivityAttributes: ActivityAttributes {
         var deviceCount: Int
         var dropped: Int
         var warning: Bool
+        var offsetMS: Double? = nil
+        var jitterMS: Double? = nil
     }
     var role: String
     var sessionID: String
