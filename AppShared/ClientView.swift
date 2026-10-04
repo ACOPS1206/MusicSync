@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LicenseRef-MusicSync-Attribution-NonCommercial-SourceSharing-1.0
+// SPDX-License-Identifier: MIT
 // Copyright (c) 2026 ACOPS1206
 // Source: https://github.com/ACOPS1206/MusicSync
 
@@ -16,6 +16,15 @@ struct ClientView: View {
                         Button("Find Nearby Hosts") { model.search() }.buttonStyle(.glassProminent)
                     }
                 }
+                SyncWarningView(issues:model.syncIssues)
+                if model.selectedName != nil {
+                    RealtimeStatusView(phase:model.sessionPhase,traffic:model.traffic,drops:model.dropped,schedulingErrorMS:model.schedulingErrorMS,updated:model.lastUpdated)
+                    Section("Audio queue") {
+                        LabeledContent("Buffered packets", value: String(model.bufferCount))
+                        LabeledContent("Scheduled ahead", value: String(format:"%.0f ms",model.bufferAheadMS))
+                    }
+                }
+                LiveActivitySettingsView()
                 Section("Nearby Hosts") {
                     if model.nearby.isEmpty && model.searching { HStack { ProgressView(); Text("Searching…") } }
                     ForEach(model.nearby) { mac in

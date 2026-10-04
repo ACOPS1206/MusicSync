@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LicenseRef-MusicSync-Attribution-NonCommercial-SourceSharing-1.0
+// SPDX-License-Identifier: MIT
 // Copyright (c) 2026 ACOPS1206
 // Source: https://github.com/ACOPS1206/MusicSync
 
@@ -13,6 +13,20 @@ struct NearbyMac: Identifiable {
     let endpoint: NWEndpoint
 }
 @MainActor final class ClientModel: ObservableObject {
+    @Published var sessionID = UUID()
+    @Published var sessionPhase = "Waiting"
+    @Published var syncIssues: [SyncIssue] = []
+    @Published var traffic = TrafficSnapshot()
+    @Published var bufferCount = 0
+    @Published var bufferAheadMS = 0.0
+    @Published var schedulingErrorMS = 0.0
+    @Published var lastUpdated = Date()
+    private var health = SyncHealthMonitor()
+    private var meter = TrafficMeter()
+    private var lastPong = 0.0
+    private var peakScheduleError = 0.0
+    private var monitorMode = false
+    private var audioInterrupted = false
     @Published var nearby: [NearbyMac] = []
     @Published var status = tr("Ready to search")
     @Published var connected = false
@@ -57,8 +71,9 @@ struct NearbyMac: Identifiable {
         interruptionObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] notification in MainActor.assumeIsolated {
             guard let type = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt else { return }
             if type == AVAudioSession.InterruptionType.began.rawValue {
-                self?.player.stop(); self?.buffer = JitterQueue(); self?.status = tr("Audio interrupted")
-            } else { self?.restartAudio() }
+                self?.audioInterrupted = true
+                self?.player.stop(); self?.buffer = JitterQueue(); self?.status = tr("Audio interrupted"); self?.sessionPhase = "Interrupted"
+            } else { self?.audioInterrupted = false; self?.restartAudio() }
          } }
         #else
         routeObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.restartAudio() } }
@@ -107,19 +122,21 @@ struct NearbyMac: Identifiable {
               let nwPort = NWEndpoint.Port(rawValue: UInt16(port)) else {
             error = tr("Paste the Host connection address, for example MacBook.local:49152 or 192.168.1.20:49152."); return
         }
-        disconnect()
+        disconnect(); sessionID = UUID()
         let mac = NearbyMac(name: value, endpoint: .hostPort(host: NWEndpoint.Host(hostname), port: nwPort))
         directMac = mac; selectedName = mac.name; wantConnection = true
         error = nil; open(mac)
     }
     func connect(_ mac: NearbyMac) {
-        disconnect(); wantConnection = true; selectedName = mac.name
+        disconnect(); sessionID = UUID(); wantConnection = true; selectedName = mac.name
         open(mac)
     }
     private func open(_ mac: NearbyMac) {
         guard peer == nil else { return }
         retry?.cancel(); retry = nil
         clock = ClockEstimate(); buffer = JitterQueue(); lastEpoch = nil; pendingPings.removeAll(); pings = 0
+        audioInterrupted = false
+        sessionPhase = "Connecting"; health = SyncHealthMonitor(); meter = TrafficMeter(); syncIssues = []; traffic = TrafficSnapshot(); lastPong = 0; peakScheduleError = 0; monitorMode = false
         requestedLatency = 0.18; receivedLatency = 0.18; playbackDrops = 0; dropped = 0
         let peer = Peer(NWConnection(to: mac.endpoint, using: LAN.parameters()), queue: .main)
         self.peer = peer; status = String(format: tr("Connecting to %@…"), mac.name)
@@ -128,7 +145,7 @@ struct NearbyMac: Identifiable {
             switch state {
             case .ready:
                 do { try self.player.start() } catch { self.error = error.localizedDescription; self.disconnect(); return }
-                self.connected = true; self.status = tr("Synchronizing clocks…")
+                self.connected = true; self.status = tr("Synchronizing clocks…"); self.sessionPhase = "Synchronizing"
                 var hello = Message("hello")
                 #if os(iOS)
                 hello.name = UIDevice.current.name
@@ -154,24 +171,30 @@ struct NearbyMac: Identifiable {
         if message.kind == "pong", let t1 = message.t1, let t2 = message.t2, let t3 = message.t3,
            let index = pendingPings.firstIndex(of: t1) {
             pendingPings.remove(at: index)
-            clock.observe(t1:t1,t2:t2,t3:t3,t4:now)
+            clock.observe(t1:t1,t2:t2,t3:t3,t4:now); lastPong = now
             rtt = clock.rtt; offset = clock.offset; jitter = clock.jitter
             uncertainty = clock.uncertainty
             if clock.ready, now - lastReport > 1 {
                 var stats = Message("stats"); stats.rtt = rtt; stats.offset = offset; stats.jitter = jitter
                 stats.latency = max(requestedLatency, min(0.5, max(0.18, rtt / 2 + 4 * jitter + player.outputLatency + 0.07)))
+                stats.syncWarning = syncIssues.map(\.rawValue).joined(separator: ",")
+                stats.dropped = dropped; stats.schedulingError = schedulingErrorMS / 1000; stats.bufferCount = bufferCount
                 peer?.send(stats); lastReport = now
-                if lastAudio == 0 { status = tr("Connected • waiting for Host audio") }
+                if lastAudio == 0 { status = tr("Connected • waiting for Host audio"); sessionPhase = "Waiting" }
             }
         } else if message.kind == "audio", clock.ready, message.validAudio {
+            if audioInterrupted { return }
             if lastEpoch != message.epoch {
                 player.stop(); try? player.start(); buffer = JitterQueue(); lastEpoch = message.epoch
             }
+            meter.record(bytes: message.payload?.count ?? 0)
+            monitorMode = message.monitor ?? false
             buffer.insert(message); lastAudio = now
+            if sessionPhase != "Streaming" { sessionPhase = "Streaming" }
             if let delay = message.latency, delay.isFinite, (0.18...0.5).contains(delay) { receivedLatency = delay }
         } else if message.kind == "stop" {
             player.stop(); try? player.start(); buffer = JitterQueue(); lastAudio = 0
-            status = tr("Connected • Host stopped streaming")
+            status = tr("Connected • Host stopped streaming"); sessionPhase = "Waiting"; health = SyncHealthMonitor(); syncIssues = []
         }
     }
     private func startTimers() {
@@ -201,17 +224,27 @@ struct NearbyMac: Identifiable {
             if let raw = packet.outputChannel, let channel = OutputChannel(rawValue: raw), hostChannel != channel { hostChannel = channel }
             player.channel = channelOverride.channel ?? hostChannel
             if !player.schedule(packet, offset:clock.offset) { playbackDrops += 1 }
+            peakScheduleError = max(peakScheduleError,player.schedulingError)
         }
         if buffer.drops > before { requestedLatency = min(0.5, latency + 0.02) }
         if now - lastUI > 0.5 {
             dropped = playbackDrops + buffer.drops
             latency = receivedLatency
+            traffic = meter.sample(now: now, drops: dropped)
+            bufferCount = buffer.count
+            bufferAheadMS = max(0, (player.queuedUntil ?? now) - now) * 1000
+            schedulingErrorMS = peakScheduleError * 1000
+            var input = SyncHealthInput(); input.uncertainty = uncertainty; input.schedulingError = peakScheduleError
+            input.dropRate = traffic.dropsPerSecond; input.clockAge = lastPong > 0 ? now - lastPong : 0
+            input.streaming = sessionPhase == "Streaming"; input.audioAge = lastAudio > 0 ? now - lastAudio : 0
+            input.monitor = monitorMode; health.update(input,now:now); syncIssues = health.issues
+            peakScheduleError = 0; lastUpdated = Date()
             if lastAudio > 0 { status = now - lastAudio < 1 ? tr("Streaming • scheduled playback") : tr("Connected • no recent audio") }
             lastUI = now
         }
     }
     private func restartAudio() {
-        guard connected else { return }
+        guard connected, !audioInterrupted else { return }
         player.stop(); buffer = JitterQueue()
         do { try player.start() } catch { self.error = error.localizedDescription }
     }
@@ -221,16 +254,17 @@ struct NearbyMac: Identifiable {
     func disconnect() {
         wantConnection = false; retry?.cancel(); retry = nil
         let old = peer; peer = nil; old?.cancel()
-        cleanup(); selectedName = nil; directMac = nil; status = tr("Disconnected")
+        cleanup(); selectedName = nil; directMac = nil; status = tr("Disconnected"); sessionPhase = "Stopped"
     }
     private func cleanup() {
         pingTimer?.invalidate(); drainTimer?.invalidate(); pingTimer = nil; drainTimer = nil
         player.stop(); buffer = JitterQueue(); connected = false; lastAudio = 0; lastReport = 0
+        health = SyncHealthMonitor(); syncIssues = []; bufferCount = 0; bufferAheadMS = 0; schedulingErrorMS = 0; traffic = TrafficSnapshot()
     }
     private func lost() {
         let old = peer; peer = nil; old?.cancel(); cleanup()
         guard wantConnection else { return }
-        status = tr("Connection lost • reconnecting…")
+        status = tr("Connection lost • reconnecting…"); sessionPhase = "Reconnecting"
         retry?.cancel()
         let task = DispatchWorkItem { [weak self] in
             guard let self, self.wantConnection, let mac = self.directMac ?? self.nearby.first(where: { $0.name == self.selectedName }) else { return }

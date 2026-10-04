@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LicenseRef-MusicSync-Attribution-NonCommercial-SourceSharing-1.0
+// SPDX-License-Identifier: MIT
 // Copyright (c) 2026 ACOPS1206
 // Source: https://github.com/ACOPS1206/MusicSync
 
@@ -38,9 +38,17 @@ struct HelpView: View {
                 Section("What the numbers mean") {
                     Text("Shared buffer is the intentional playback delay. RTT is network round-trip time. Clock offset converts Mac timestamps to iPhone time. Jitter describes network variation. Clock uncertainty is an estimate, not a measured speaker error. Dropped frames arrived too late or could not be scheduled.")
                 }
+                Section("Sync warning") {
+                    Text("Warnings use clock uncertainty, scheduling lateness, recent dropped packets, stale clock updates and stalled audio. They are estimates of risk, not a microphone measurement of the speakers. Clock offset alone is not a warning: devices can have very different uptimes.")
+                    Text("Most warnings require three consecutive half-second checks. They clear after three stable seconds. ScreenCaptureKit monitor mode warns immediately because the original Mac output cannot share the delayed timeline.")
+                }
+                Section("Live Activity & Dynamic Island") {
+                    Text("Enable the Live Activity toggle and connect or start Host while MusicSync is open. Lock Screen and Dynamic Island show role, session state, buffer, RTT, clock uncertainty and warnings. Metrics update about every five seconds, with faster state changes; iOS controls the actual display schedule. A stale label appears if updates stop.")
+                    Text("Live Activities need the installed WidgetKit extension. LiveContainer may not register guest extensions, so this feature is not guaranteed there. Install with signing and preserve PlugIns/MusicSyncWidgets.appex for normal use. Re-sign both the app and extension with compatible bundle IDs. In-app status works without Live Activities. No push server is used.")
+                }
                 Section("License & attribution") {
                     Text("MusicSync by ACOPS1206")
-                    Text("Noncommercial use only. Credit MusicSync when sharing or reusing code. Distributed or network-served projects incorporating this code must publish their complete corresponding source under the same MusicSync license.")
+                    Text("MIT License. Commercial use, modification and redistribution are allowed. Keep the copyright notice and license with copies or substantial portions. Derivative source disclosure is not required.")
                     Link("Source code", destination: URL(string: "https://github.com/ACOPS1206/MusicSync")!)
                     Link("Full license", destination: URL(string: "https://github.com/ACOPS1206/MusicSync/blob/main/LICENSE")!)
                 }

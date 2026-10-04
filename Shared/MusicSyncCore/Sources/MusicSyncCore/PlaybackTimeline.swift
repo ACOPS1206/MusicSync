@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LicenseRef-MusicSync-Attribution-NonCommercial-SourceSharing-1.0
+// SPDX-License-Identifier: MIT
 // Copyright (c) 2026 ACOPS1206
 // Source: https://github.com/ACOPS1206/MusicSync
 
@@ -9,6 +9,7 @@ public struct PlaybackTimeline {
     private var nextTime: Double?
     private var lastSequence: UInt64?
     private var epoch: UInt64?
+    public var queuedUntil: Double? { nextTime }
     public init() {}
     /// nil means append after the preceding buffer; a value means schedule at that host time.
     public mutating func schedule(sequence: UInt64, epoch: UInt64, desired: Double, duration: Double, now: Double) -> Double? {

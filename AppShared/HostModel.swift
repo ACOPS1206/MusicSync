@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LicenseRef-MusicSync-Attribution-NonCommercial-SourceSharing-1.0
+// SPDX-License-Identifier: MIT
 // Copyright (c) 2026 ACOPS1206
 // Source: https://github.com/ACOPS1206/MusicSync
 
@@ -20,9 +20,25 @@ struct ConnectedDevice: Identifiable {
     var offset = 0.0
     var jitter = 0.0
     var request = 0.18
+    var syncIssues: [SyncIssue] = []
+    var dropped = 0
+    var lastStats = 0.0
 }
 
 @MainActor final class HostModel: ObservableObject {
+    @Published var sessionID = UUID()
+    @Published var sessionPhase = "Waiting"
+    @Published var syncIssues: [SyncIssue] = []
+    @Published var traffic = TrafficSnapshot()
+    @Published var schedulingErrorMS = 0.0
+    @Published var localDrops = 0
+    @Published var lastUpdated = Date()
+    private var health = SyncHealthMonitor()
+    private var meter = TrafficMeter()
+    private var statusTimer: Timer?
+    private var peakScheduleError = 0.0
+    private var lastPCM = 0.0
+    private var isMonitor = false
     @Published var active = false
     @Published var directOnly = false
     @Published var connectionAddress = ""
@@ -68,7 +84,7 @@ struct ConnectedDevice: Identifiable {
     }
     func startHost() {
         guard !active else { return }
-        error = nil
+        error = nil; sessionID = UUID(); sessionPhase = "Connecting"
         do {
             let listener = try NWListener(using: LAN.parameters())
             #if os(macOS)
@@ -82,7 +98,7 @@ struct ConnectedDevice: Identifiable {
                 guard let self else { return }
                 switch state {
                 case .ready:
-                    self.active = true; self.status = tr("Host available on LAN")
+                    self.active = true; self.status = tr("Host available on LAN"); self.sessionPhase = "Waiting"; self.startStatusTimer()
                     #if os(macOS)
                     if let name = SCDynamicStoreCopyLocalHostName(nil) as String?, let port = listener?.port {
                         self.connectionAddress = "\(name).local:\(port.rawValue)"
@@ -104,7 +120,8 @@ struct ConnectedDevice: Identifiable {
         Task { await stopStreaming() }
         listener?.cancel(); listener = nil; connectionAddress = ""
         for peer in peers.values { peer.cancel() }
-        peers.removeAll(); devices.removeAll(); active = false; status = tr("Stopped")
+        peers.removeAll(); devices.removeAll(); active = false; status = tr("Stopped"); sessionPhase = "Stopped"
+        statusTimer?.invalidate(); statusTimer = nil; syncIssues = []
     }
     private func accept(_ connection: NWConnection) {
         let peer = Peer(connection, queue: .main)
@@ -136,6 +153,9 @@ struct ConnectedDevice: Identifiable {
                   rtt >= 0, rtt < 1, jitter >= 0, requested >= 0.18, requested <= 0.5 {
             devices[index].ready = true; devices[index].rtt = rtt; devices[index].offset = offset
             devices[index].jitter = jitter; devices[index].request = requested
+            devices[index].lastStats = SyncClock.now
+            if let raw = message.syncWarning { devices[index].syncIssues = raw.split(separator: ",").compactMap { SyncIssue(rawValue: String($0)) } }
+            if let count = message.dropped, (0...1_000_000).contains(count) { devices[index].dropped = count }
             delay.update(rtt: rtt, jitter: jitter, requested: requested)
             latency = delay.target
             var timeline = Message("timeline"); timeline.latency = latency
@@ -147,6 +167,9 @@ struct ConnectedDevice: Identifiable {
         busy = true; defer { busy = false }
         error = nil; delay = DelayController(); latency = delay.target
         sequence = 0; epoch += 1; nextPTS = nil
+        isMonitor = mode == 1 && !testTone && fileURL == nil
+        lastPCM = SyncClock.now; localDrops = 0; peakScheduleError = 0; health = SyncHealthMonitor(); meter = TrafficMeter()
+        sessionPhase = "Synchronizing"
         do {
             #if os(macOS)
             if mode == 0 || testTone || fileURL != nil { try player.start() }
@@ -155,7 +178,7 @@ struct ConnectedDevice: Identifiable {
             #endif
             if testTone {
                 phase = 0
-                streaming = true; status = tr("Synchronized test tone")
+                streaming = true; status = tr("Synchronized test tone"); sessionPhase = "Streaming"
                 toneTimer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.tone()  } }
                 if let toneTimer { RunLoop.main.add(toneTimer, forMode: .common) }
             } else {
@@ -193,11 +216,12 @@ struct ConnectedDevice: Identifiable {
                 streaming = true
                 try await source.start()
                 guard active, capture === source else { await source.stop(); streaming = false; return }
+                sessionPhase = "Streaming"
                 status = fileURL != nil ? tr("Streaming music file") : mode == 0 ? tr("Synchronized system audio") : tr("ScreenCaptureKit monitor • original Mac output is ahead")
             }
         } catch {
             self.error = error.localizedDescription
-            streaming = false
+            streaming = false; sessionPhase = active ? "Waiting" : "Stopped"
             await capture?.stop(); capture = nil; player.stop()
         }
     }
@@ -207,6 +231,7 @@ struct ConnectedDevice: Identifiable {
         var message = Message("stop"); message.epoch = epoch
         for peer in peers.values { peer.send(message) }
         status = active ? tr("Host available on LAN") : tr("Stopped")
+        sessionPhase = active ? "Waiting" : "Stopped"; health = SyncHealthMonitor(); syncIssues = []; isMonitor = false
     }
     private func tone() {
         var samples = [Float](repeating: 0, count: 960)
@@ -227,7 +252,7 @@ struct ConnectedDevice: Identifiable {
     }
     private func broadcast(_ data: Data, frames: Int, captureTime: Double) {
         guard streaming else { return }
-        let now = SyncClock.now
+        let now = SyncClock.now; lastPCM = now
         // Keep the audio sample timeline continuous; callback arrival is not the presentation clock.
         let earliest = captureTime + delay.target
         if nextPTS == nil { nextPTS = max(earliest, now + delay.target) }
@@ -240,13 +265,36 @@ struct ConnectedDevice: Identifiable {
             message.sequence = sequence; sequence += 1; message.epoch = epoch
             message.pts = nextPTS; message.sampleRate = 48_000; message.channels = 2; message.frames = count
             message.latency = delay.target
-            message.outputChannel = layout.remoteChannel.rawValue
+            message.outputChannel = layout.remoteChannel.rawValue; message.monitor = isMonitor
             message.payload = data.subdata(in: (cursor * 8)..<((cursor + count) * 8))
             nextPTS! += Double(count) / 48_000; cursor += count
             player.calibration = calibrationMS / 1000
-            if player.running { _ = player.schedule(message, offset: 0) }
+            meter.record(bytes: message.payload?.count ?? 0)
+            if player.running {
+                if !player.schedule(message, offset: 0) { localDrops += 1 }
+                peakScheduleError = max(peakScheduleError, player.schedulingError)
+            }
             for device in devices where device.ready { peers[device.id]?.send(message) }
         }
         if now - lastPublished > 1 { latency = delay.target; lastPublished = now }
     }
+    private func startStatusTimer() {
+        statusTimer?.invalidate()
+        statusTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.refreshStatus() } }
+        if let statusTimer { RunLoop.main.add(statusTimer, forMode: .common) }
+    }
+    private func refreshStatus() {
+        let now = SyncClock.now
+        traffic = meter.sample(now: now, drops: localDrops)
+        schedulingErrorMS = peakScheduleError * 1000
+        var input = SyncHealthInput()
+        input.uncertainty = devices.filter(\.ready).map { $0.rtt / 2 + $0.jitter }.max() ?? 0
+        input.clockAge = devices.filter(\.ready).map { now - $0.lastStats }.max() ?? 0
+        input.streaming = streaming && sessionPhase == "Streaming"; input.audioAge = lastPCM > 0 ? now - lastPCM : 0
+        input.dropRate = traffic.dropsPerSecond; input.schedulingError = peakScheduleError; input.monitor = isMonitor
+        health.update(input,now:now)
+        syncIssues = SyncIssue.allCases.filter { issue in health.issues.contains(issue) || devices.contains { $0.syncIssues.contains(issue) } }
+        peakScheduleError = 0; lastUpdated = Date()
+    }
+
 }

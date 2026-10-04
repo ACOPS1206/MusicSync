@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LicenseRef-MusicSync-Attribution-NonCommercial-SourceSharing-1.0
+// SPDX-License-Identifier: MIT
 // Copyright (c) 2026 ACOPS1206
 // Source: https://github.com/ACOPS1206/MusicSync
 
@@ -38,12 +38,16 @@ struct HostView: View {
                         }.buttonStyle(.glass)
                     }
                 }
+                SyncWarningView(issues:model.syncIssues)
+                if model.active { RealtimeStatusView(phase:model.sessionPhase,traffic:model.traffic,drops:model.localDrops,schedulingErrorMS:model.schedulingErrorMS,updated:model.lastUpdated) }
+                LiveActivitySettingsView()
                 Section("Connected Devices") {
                     if model.devices.isEmpty { Text("Connect from MusicSync on another iPhone or Mac.").foregroundStyle(.secondary) }
                     ForEach(model.devices) { device in
                         VStack(alignment:.leading,spacing:6) {
                             Label(device.name,systemImage:"iphone")
                             Text(device.ready ? tr("Clock synchronized") : tr("Synchronizing…")).foregroundStyle(.secondary)
+                            if !device.syncIssues.isEmpty { Label("Client reports sync risk",systemImage:"exclamationmark.triangle.fill").foregroundStyle(.orange) }
                             if device.ready {
                                 Text(String(format:tr("RTT %.1f ms · Clock %+.1f ms"),device.rtt * 1000,device.offset * 1000)).monospacedDigit()
                                 Text(String(format:tr("Clock uncertainty ≥ %.1f ms"),(device.rtt / 2 + device.jitter) * 1000)).font(.caption)

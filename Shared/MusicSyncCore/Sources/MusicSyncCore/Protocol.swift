@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LicenseRef-MusicSync-Attribution-NonCommercial-SourceSharing-1.0
+// SPDX-License-Identifier: MIT
 // Copyright (c) 2026 ACOPS1206
 // Source: https://github.com/ACOPS1206/MusicSync
 
@@ -32,6 +32,11 @@ public struct Message: Codable {
     public var sampleRate: Double?
     public var channels: Int?
     public var frames: Int?
+    public var syncWarning: String?
+    public var dropped: Int?
+    public var schedulingError: Double?
+    public var bufferCount: Int?
+    public var monitor: Bool?
     public var outputChannel: String?
     public var payload: Data?
     public init(_ kind: String) { self.kind = kind }

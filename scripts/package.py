@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: LicenseRef-MusicSync-Attribution-NonCommercial-SourceSharing-1.0
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 ACOPS1206
 # Source: https://github.com/ACOPS1206/MusicSync
 
@@ -22,6 +22,14 @@ def verify(app, platform):
                 raise RuntimeError('Missing localization: '+language+'/'+filename)
     for filename in ['LICENSE','NOTICE']:
         if not (resources/filename).is_file(): raise RuntimeError('Missing license/attribution: '+filename)
+    if platform == 'iOS':
+        if not info.get('NSSupportsLiveActivities'): raise RuntimeError('Live Activities support is missing')
+        extension = app/'PlugIns/MusicSyncWidgets.appex'
+        widget_info = plistlib.loads((extension/'Info.plist').read_bytes())
+        if widget_info.get('NSExtension',{}).get('NSExtensionPointIdentifier') != 'com.apple.widgetkit-extension': raise RuntimeError('Invalid WidgetKit extension')
+        if not (extension/widget_info['CFBundleExecutable']).is_file(): raise RuntimeError('Missing widget executable')
+        if not widget_info['CFBundleIdentifier'].startswith(info['CFBundleIdentifier'] + '.'): raise RuntimeError('Widget bundle ID must extend app ID')
+        if widget_info['CFBundleVersion'] != info['CFBundleVersion']: raise RuntimeError('Widget build version mismatch')
     return info
 
 def main():
@@ -41,6 +49,7 @@ def main():
     with zipfile.ZipFile(out/'MusicSync-iOS.ipa') as archive:
         names=archive.namelist()
         if 'Payload/MusicSync.app/Info.plist' not in names: raise RuntimeError('Invalid IPA layout')
+        if 'Payload/MusicSync.app/PlugIns/MusicSyncWidgets.appex/Info.plist' not in names: raise RuntimeError('IPA missing Live Activity extension')
         if any('embedded.mobileprovision' in name for name in names): raise RuntimeError('IPA must be unsigned')
     shutil.rmtree(stage)
     print('Verified IPA layout, OS targets, executables and macOS ad-hoc signature.')

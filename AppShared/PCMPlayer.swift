@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LicenseRef-MusicSync-Attribution-NonCommercial-SourceSharing-1.0
+// SPDX-License-Identifier: MIT
 // Copyright (c) 2026 ACOPS1206
 // Source: https://github.com/ACOPS1206/MusicSync
 
@@ -12,6 +12,8 @@ final class PCMPlayer {
     private let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2)!
     private(set) var running = false
     private var timeline = PlaybackTimeline()
+    private(set) var schedulingError = 0.0
+    var queuedUntil: Double? { timeline.queuedUntil }
     var calibration = 0.0
     var channel = OutputChannel.stereo
     var outputLatency: Double {
@@ -33,7 +35,7 @@ final class PCMPlayer {
         #endif
         try engine.start(); node.play(); running = true
     }
-    func stop() { node.stop(); engine.stop(); running = false; timeline = PlaybackTimeline() }
+    func stop() { node.stop(); engine.stop(); running = false; timeline = PlaybackTimeline(); schedulingError = 0 }
     @discardableResult func schedule(_ packet: Message, offset: Double) -> Bool {
         guard running, packet.validAudio, let frames = packet.frames, let data = packet.payload, let pts = packet.pts,
               let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)),
@@ -50,8 +52,11 @@ final class PCMPlayer {
             }
         }
         let renderTime = pts - offset - outputLatency + calibration
-        guard renderTime > SyncClock.now + 0.003 else { return false }
+        let now = SyncClock.now
+        guard renderTime > now + 0.003 else { schedulingError = max(0, now + 0.003 - renderTime); return false }
+        let previousEnd = timeline.queuedUntil
         let anchor = timeline.schedule(sequence: packet.sequence!, epoch: packet.epoch!, desired: renderTime, duration: Double(frames) / 48_000, now: SyncClock.now)
+        schedulingError = abs((anchor ?? previousEnd ?? renderTime) - renderTime)
         let time = anchor.map { AVAudioTime(hostTime: AVAudioTime.hostTime(forSeconds: $0)) }
         node.scheduleBuffer(buffer, at: time, options: [])
         return true
