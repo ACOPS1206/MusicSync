@@ -16,6 +16,13 @@ struct HostView: View {
                     Button(model.active ? "Stop Host" : "Start Host") {
                         if model.active { model.stopHost() } else { model.startHost() }
                     }.buttonStyle(.glassProminent).disabled(model.busy)
+                    if !model.connectionAddress.isEmpty {
+                        LabeledContent("Direct connection", value: model.connectionAddress).textSelection(.enabled)
+                        Button("Copy Connection Address") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(model.connectionAddress, forType: .string)
+                        }.buttonStyle(.glass)
+                    }
                 }
                 Section("Connected Devices") {
                     if model.devices.isEmpty { Text("Connect from MusicSync on your iPhone.").foregroundStyle(.secondary) }

@@ -2,6 +2,7 @@ import SwiftUI
 import Network
 import MusicSyncCore
 import AVFoundation
+import SystemConfiguration
 
 struct ConnectedDevice: Identifiable {
     let id: UUID
@@ -15,6 +16,7 @@ struct ConnectedDevice: Identifiable {
 
 @MainActor final class HostModel: ObservableObject {
     @Published var active = false
+    @Published var connectionAddress = ""
     @Published var streaming = false
     @Published var busy = false
     @Published var status = "Ready"
@@ -52,10 +54,14 @@ struct ConnectedDevice: Identifiable {
             let listener = try NWListener(using: LAN.parameters())
             listener.service = NWListener.Service(name: Host.current().localizedName ?? "MusicSync Mac", type: LAN.service)
             listener.newConnectionHandler = { [weak self] connection in MainActor.assumeIsolated { self?.accept(connection)  } }
-            listener.stateUpdateHandler = { [weak self] state in MainActor.assumeIsolated {
+            listener.stateUpdateHandler = { [weak self, weak listener] state in MainActor.assumeIsolated {
                 guard let self else { return }
                 switch state {
-                case .ready: self.active = true; self.status = "Host available on LAN"
+                case .ready:
+                    self.active = true; self.status = "Host available on LAN"
+                    if let name = SCDynamicStoreCopyLocalHostName(nil) as String?, let port = listener?.port {
+                        self.connectionAddress = "\(name).local:\(port.rawValue)"
+                    }
                 case .failed(let error): self.error = error.localizedDescription; self.stopHost()
                 default: break
                 }
@@ -66,7 +72,7 @@ struct ConnectedDevice: Identifiable {
     }
     func stopHost() {
         Task { await stopStreaming() }
-        listener?.cancel(); listener = nil
+        listener?.cancel(); listener = nil; connectionAddress = ""
         for peer in peers.values { peer.cancel() }
         peers.removeAll(); devices.removeAll(); active = false; status = "Stopped"
     }

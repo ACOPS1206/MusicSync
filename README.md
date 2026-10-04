@@ -109,3 +109,12 @@ Mac packaging applies an ad-hoc signature (no certificate), verifies it, and pre
 - Timing trim is manual. Per-device persistent calibration, hardware drift resampling, authenticated pairing, packet-loss concealment and graceful sleep recovery are pending.
 - LAN congestion, client isolation, VPN/firewall filtering, Bluetooth/AirPlay routes and UI/main-runloop stalls can cause drops. JSON PCM conversion and scheduling are a first implementation, not a real-time lock-free audio pipeline.
 - Source applications' transport/video remains undelayed; synchronized speaker replay adds an audio/video offset to video content. This app is aimed primarily at music.
+
+
+## LiveContainer / Bonjour NoAuth (-65555)
+
+LiveContainer runs guests inside its own process. iOS may validate Bonjour service declarations against LiveContainer's installed Info.plist, so MusicSync's own `_musicsync._tcp` declaration is insufficient when the host does not allow that type. This can fail before a Local Network permission prompt appears. This is a host configuration restriction, not evidence that iOS 26.7 cannot run MusicSync.
+
+For this case, enable Local Network for LiveContainer in iOS Settings. Start the Mac Host, choose **Copy Connection Address**, and paste the `MacName.local:port` address into the iPhone **Direct connection / LiveContainer** section. This uses a normal TCP connection without browsing the custom service type; Local Network authorization is still required. It preserves the same clock sync, audio protocol and automatic reconnection. The address/port may change when the Host restarts. If .local hostname resolution is filtered by your LAN, direct connection cannot resolve that name. Ordinary signed installation of MusicSync remains the preferred setup for its own permission declarations and background audio lifecycle. A LiveContainer build with `_musicsync._tcp` added to its host NSBonjourServices is another option.
+
+Discovery failures now show guidance and release the failed browser so **Find Nearby Macs** can retry after permission changes. Physical LiveContainer playback and background behavior still need device testing. Reference: https://github.com/LiveContainer/LiveContainer/issues/1519

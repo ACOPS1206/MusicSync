@@ -27,6 +27,19 @@ struct ClientView: View {
                         }
                     }
                 }
+                Section("Direct connection / LiveContainer") {
+                    TextField("MacBook.local:port", text: $model.directAddress)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                        .onSubmit { model.connectDirect() }
+                    Button("Connect to Address") { model.connectDirect() }
+                        .buttonStyle(.glass).disabled(model.directAddress.isEmpty)
+                    Text("On Mac, start Host and copy Connection Address. Paste it here if Bonjour discovery is unavailable. Local Network access is still required.").font(.caption).foregroundStyle(.secondary)
+                    if model.discoveryDenied {
+                        Button("Open App Settings") {
+                            if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                        }
+                    }
+                }
                 if model.selectedName != nil {
                     Section("Latency & Synchronization") {
                         metric("Shared buffer",model.latency)

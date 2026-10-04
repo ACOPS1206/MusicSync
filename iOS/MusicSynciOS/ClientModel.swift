@@ -22,6 +22,9 @@ struct NearbyMac: Identifiable {
     @Published var uncertainty = 0.0
     @Published var dropped = 0
     @Published var calibrationMS = 0.0
+    @Published var directAddress = ""
+    @Published var discoveryDenied = false
+    private var directMac: NearbyMac?
     private var browser: NWBrowser?
     private var peer: Peer?
     private let player = PCMPlayer()
@@ -51,7 +54,7 @@ struct NearbyMac: Identifiable {
     }
     func search() {
         guard browser == nil else { return }
-        searching = true; error = nil
+        searching = true; error = nil; discoveryDenied = false
         let browser = NWBrowser(for: .bonjour(type: LAN.service, domain: nil), using: LAN.parameters())
         browser.browseResultsChangedHandler = { [weak self] results, _ in MainActor.assumeIsolated {
             guard let self else { return }
@@ -61,10 +64,41 @@ struct NearbyMac: Identifiable {
             }.sorted { $0.name < $1.name }
             if self.wantConnection, self.peer == nil, let found = self.nearby.first(where: { $0.name == self.selectedName }) { self.open(found) }
          } }
-        browser.stateUpdateHandler = { [weak self] state in MainActor.assumeIsolated {
-            if case .failed(let error) = state { self?.error = error.localizedDescription; self?.searching = false }
+        browser.stateUpdateHandler = { [weak self, weak browser] state in MainActor.assumeIsolated {
+            guard let self, self.browser === browser else { return }
+            switch state {
+            case .failed(let error):
+                self.discoveryFailed(error)
+                self.browser = nil; browser?.cancel()
+            case .waiting(let error):
+                self.discoveryFailed(error)
+                self.browser = nil; browser?.cancel()
+            default: break
+            }
          } }
         self.browser = browser; browser.start(queue: .main); status = "Searching nearby Macs…"
+    }
+    private func discoveryFailed(_ failure: NWError) {
+        searching = false; status = "Discovery unavailable"
+        if case .dns(let code) = failure, code == -65555 || code == -65570 {
+            discoveryDenied = true
+            error = "Bonjour access was denied. In LiveContainer, the host app must allow _musicsync._tcp; the guest Info.plist cannot grant this. Enable Local Network for LiveContainer, then use the Mac connection address below, or install MusicSync directly with signing."
+        } else { error = failure.localizedDescription }
+    }
+    func connectDirect() {
+        let value = directAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let components = URLComponents(string: "musicsync://" + value),
+              let hostname = components.host, !hostname.isEmpty,
+              components.user == nil, components.password == nil,
+              components.path.isEmpty, components.query == nil, components.fragment == nil,
+              let port = components.port, (1...65535).contains(port),
+              let nwPort = NWEndpoint.Port(rawValue: UInt16(port)) else {
+            error = "Paste the Mac connection address, for example MacBook.local:49152."; return
+        }
+        disconnect()
+        let mac = NearbyMac(name: value, endpoint: .hostPort(host: NWEndpoint.Host(hostname), port: nwPort))
+        directMac = mac; selectedName = mac.name; wantConnection = true
+        error = nil; open(mac)
     }
     func connect(_ mac: NearbyMac) {
         disconnect(); wantConnection = true; selectedName = mac.name
@@ -163,7 +197,7 @@ struct NearbyMac: Identifiable {
     func disconnect() {
         wantConnection = false; retry?.cancel(); retry = nil
         let old = peer; peer = nil; old?.cancel()
-        cleanup(); selectedName = nil; status = "Disconnected"
+        cleanup(); selectedName = nil; directMac = nil; status = "Disconnected"
     }
     private func cleanup() {
         pingTimer?.invalidate(); drainTimer?.invalidate(); pingTimer = nil; drainTimer = nil
@@ -175,7 +209,7 @@ struct NearbyMac: Identifiable {
         status = "Connection lost • reconnecting…"
         retry?.cancel()
         let task = DispatchWorkItem { [weak self] in
-            guard let self, self.wantConnection, let mac = self.nearby.first(where: { $0.name == self.selectedName }) else { return }
+            guard let self, self.wantConnection, let mac = self.directMac ?? self.nearby.first(where: { $0.name == self.selectedName }) else { return }
             self.open(mac)
         }
         retry = task; DispatchQueue.main.asyncAfter(deadline:.now()+2,execute:task)
