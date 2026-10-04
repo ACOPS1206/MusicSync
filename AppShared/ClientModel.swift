@@ -31,6 +31,19 @@ struct NearbyMac: Identifiable {
     @Published var nearby: [NearbyMac] = []
     @Published var status = tr("Ready to search")
     @Published var connected = false
+    @Published var paired = false
+    @Published var pairingCode = ""
+    @Published var connectedHostName = ""
+    @Published var hostAddress = ""
+    @Published var hostServiceName = ""
+    @Published var pairingNotice: String?
+    @Published var identifyingUntil = Date.distantPast
+    private let deviceID = PairingStore.identity("client")
+    private var pairingHostID: String?
+    private var pairingNonce: String?
+    private var sessionSecrets: [String:String] = [:]
+    private var reconnectTarget: NearbyMac?
+    private let identifierSound = IdentificationSound()
     @Published var searching = false
     @Published var selectedName: String?
     @Published var error: String?
@@ -41,8 +54,8 @@ struct NearbyMac: Identifiable {
     @Published var uncertainty = 0.0
     @Published var dropped = 0
     @Published var calibrationMS = 0.0
-    @Published var channelOverride = ChannelSelection.automatic
-    @Published var hostChannel = OutputChannel.stereo
+    @Published var channelOverride = ChannelSelection.automatic { didSet { reportChannel() } }
+    @Published var hostChannel = OutputChannel.stereo { didSet { reportChannel() } }
     @Published var directAddress = ""
     @Published var discoveryDenied = false
     private var directMac: NearbyMac?
@@ -134,6 +147,7 @@ struct NearbyMac: Identifiable {
     }
     private func open(_ mac: NearbyMac) {
         guard peer == nil else { return }
+        reconnectTarget = mac; paired = false; pairingCode = ""; pairingHostID = nil; pairingNonce = nil; pairingNotice = nil
         retry?.cancel(); retry = nil
         clock = ClockEstimate(); buffer = JitterQueue(); lastEpoch = nil; pendingPings.removeAll(); pings = 0
         audioInterrupted = false
@@ -145,16 +159,19 @@ struct NearbyMac: Identifiable {
             guard let self, let peer, self.peer === peer else { return }
             switch state {
             case .ready:
-                do { try self.player.start() } catch { self.error = error.localizedDescription; self.disconnect(); return }
-                self.connected = true; self.status = tr("Synchronizing clocks…"); self.sessionPhase = "Synchronizing"
-                var hello = Message("hello")
+                self.connected = true; self.status = tr("Authenticating with Host…"); self.sessionPhase = "Authenticating"
+                var hello = Message("hello"); hello.pairingVersion = 1; hello.deviceID = self.deviceID
+                hello.channelSelection = self.channelOverride.rawValue
                 #if os(iOS)
                 hello.name = UIDevice.current.name
                 #else
                 hello.name = Host.current().localizedName ?? "MusicSync Mac"
                 #endif
                 peer.send(hello)
-                self.startTimers()
+                DispatchQueue.main.asyncAfter(deadline:.now()+15) { [weak self, weak peer] in
+                    guard let self, let peer, self.peer === peer, !self.paired, self.pairingHostID == nil else { return }
+                    self.disconnect(); self.error = tr("The Host did not respond to pairing. Update MusicSync on both devices and reconnect.")
+                }
             case .failed(let error): self.error = error.localizedDescription; self.lost()
             case .cancelled: self.lost()
             case .waiting(let error): self.error = error.localizedDescription; self.lost()
@@ -169,6 +186,47 @@ struct NearbyMac: Identifiable {
     }
     private func handle(_ message: Message) {
         let now = SyncClock.now
+        if message.kind == "pairChallenge" {
+            guard !paired, let hostID = message.hostID, UUID(uuidString:hostID) != nil,
+                  let nonce = message.nonce, UUID(uuidString:nonce) != nil else { return }
+            pairingHostID = hostID; pairingNonce = nonce; updateHostInfo(message)
+            let secret = sessionSecrets[hostID] ?? PairingStore.read("client." + hostID)
+            if let secret, let proof = PairingProof.make(secret:secret,nonce:nonce,hostID:hostID,clientID:deviceID) {
+                var auth = Message("pairProof"); auth.pairingProof = proof; peer?.send(auth)
+            } else { peer?.send(Message("pairRequest")) }
+            return
+        } else if message.kind == "pairPending" {
+            guard !paired, let hostID = pairingHostID, message.hostID == hostID,
+                  let code = message.pairingCode, code.count == 6, code.allSatisfy({ $0.isASCII && $0.isNumber }) else { return }
+            pairingCode = code; status = tr("Waiting for Host approval…"); sessionPhase = "Awaiting approval"; updateHostInfo(message)
+            return
+        } else if message.kind == "pairApproved" {
+            guard !paired, let hostID = pairingHostID, message.hostID == hostID else { return }
+            if let secret = message.pairingSecret {
+                guard let data = Data(base64Encoded:secret), data.count == 32 else { return }
+                sessionSecrets[hostID] = secret
+                do { try PairingStore.write(secret,account:"client." + hostID) } catch { pairingNotice = error.localizedDescription }
+            } else if sessionSecrets[hostID] == nil && PairingStore.read("client." + hostID) == nil { return }
+            paired = true; pairingCode = ""; updateHostInfo(message)
+            if let raw = message.outputChannel, let channel = OutputChannel(rawValue:raw) { hostChannel = channel }
+            do { try player.start() } catch { self.error = error.localizedDescription; disconnect(); return }
+            status = tr("Synchronizing clocks…"); sessionPhase = "Synchronizing"; reportChannel(); startTimers()
+            return
+        } else if message.kind == "pairRejected" {
+            disconnect(); error = tr("The Host declined or expired this pairing. Connect again to request approval."); return
+        }
+        guard paired else { return }
+        if message.kind == "setChannel", let raw = message.channelSelection, let selection = ChannelSelection(rawValue:raw) {
+            if let channel = message.outputChannel.flatMap(OutputChannel.init(rawValue:)) { hostChannel = channel }
+            channelOverride = selection; reportChannel(requestID:message.requestID); return
+        } else if message.kind == "hostChannel", let raw = message.outputChannel, let channel = OutputChannel(rawValue:raw) {
+            hostChannel = channel; reportChannel(); return
+        } else if message.kind == "identify" {
+            var result = Message("identifyResult")
+            do { result.accepted = try identifierSound.play(); if result.accepted == true { identifyingUntil = Date().addingTimeInterval(1) } }
+            catch { result.accepted = false; result.name = error.localizedDescription }
+            peer?.send(result); return
+        }
         if message.kind == "pong", let t1 = message.t1, let t2 = message.t2, let t3 = message.t3,
            let index = pendingPings.firstIndex(of: t1) {
             pendingPings.remove(at: index)
@@ -179,6 +237,8 @@ struct NearbyMac: Identifiable {
                 var stats = Message("stats"); stats.rtt = rtt; stats.offset = offset; stats.jitter = jitter
                 stats.latency = max(requestedLatency, min(0.5, max(0.18, rtt / 2 + 4 * jitter + player.outputLatency + 0.07)))
                 stats.syncWarning = syncIssues.map(\.rawValue).joined(separator: ",")
+                stats.playbackState = sessionPhase
+                stats.channelSelection = channelOverride.rawValue; stats.outputChannel = effectiveChannel.rawValue
                 stats.dropped = dropped; stats.schedulingError = schedulingErrorMS / 1000; stats.bufferCount = bufferCount
                 peer?.send(stats); lastReport = now
                 if lastAudio == 0 { status = tr("Connected • waiting for Host audio"); sessionPhase = "Waiting" }
@@ -217,7 +277,7 @@ struct NearbyMac: Identifiable {
         if let drainTimer { RunLoop.main.add(drainTimer, forMode: .common) }
     }
     private func drain() {
-        guard clock.ready else { return }
+        guard paired, clock.ready else { return }
         let now = SyncClock.now
         player.calibration = calibrationMS / 1000
         let before = buffer.drops
@@ -245,8 +305,29 @@ struct NearbyMac: Identifiable {
             lastUI = now
         }
     }
+    var effectiveChannel: OutputChannel { channelOverride.channel ?? hostChannel }
+    private func updateHostInfo(_ message: Message) {
+        if let name = message.name { connectedHostName = String(name.prefix(80)) }
+        if let address = message.hostAddress { hostAddress = String(address.prefix(160)) }
+        if let name = message.serviceName { hostServiceName = String(name.prefix(80)) }
+    }
+    func reportChannel(requestID: String? = nil) {
+        guard paired else { return }
+        player.channel = effectiveChannel
+        var message = Message("channelReport"); message.channelSelection = channelOverride.rawValue
+        message.playbackState = sessionPhase
+        message.outputChannel = effectiveChannel.rawValue; message.requestID = requestID; peer?.send(message)
+    }
+    func identifyHost() { if paired { peer?.send(Message("identifyHost")) } }
+    func forgetHost() {
+        if let hostID = pairingHostID {
+            do { try PairingStore.remove("client." + hostID) } catch { pairingNotice = error.localizedDescription }
+            sessionSecrets[hostID] = nil
+        }
+        disconnect()
+    }
     private func restartAudio() {
-        guard connected, !audioInterrupted else { return }
+        guard connected, paired, !audioInterrupted else { return }
         player.stop(); buffer = JitterQueue()
         do { try player.start() } catch { self.error = error.localizedDescription }
     }
@@ -256,10 +337,11 @@ struct NearbyMac: Identifiable {
     func disconnect() {
         wantConnection = false; retry?.cancel(); retry = nil
         let old = peer; peer = nil; old?.cancel()
-        cleanup(); selectedName = nil; directMac = nil; status = tr("Disconnected"); sessionPhase = "Stopped"
+        cleanup(); selectedName = nil; directMac = nil; reconnectTarget = nil; hostAddress = ""; hostServiceName = ""; connectedHostName = ""; pairingHostID = nil; status = tr("Disconnected"); sessionPhase = "Stopped"
     }
     private func cleanup() {
         pingTimer?.invalidate(); drainTimer?.invalidate(); pingTimer = nil; drainTimer = nil
+        identifierSound.stop(); paired = false; pairingCode = ""
         player.stop(); buffer = JitterQueue(); connected = false; lastAudio = 0; lastReport = 0
         health = SyncHealthMonitor(); syncIssues = []; bufferCount = 0; bufferAheadMS = 0; schedulingErrorMS = 0; traffic = TrafficSnapshot()
     }
@@ -269,7 +351,7 @@ struct NearbyMac: Identifiable {
         status = tr("Connection lost • reconnecting…"); sessionPhase = "Reconnecting"
         retry?.cancel()
         let task = DispatchWorkItem { [weak self] in
-            guard let self, self.wantConnection, let mac = self.directMac ?? self.nearby.first(where: { $0.name == self.selectedName }) else { return }
+            guard let self, self.wantConnection, let mac = self.reconnectTarget else { return }
             self.open(mac)
         }
         retry = task; DispatchQueue.main.asyncAfter(deadline:.now()+2,execute:task)

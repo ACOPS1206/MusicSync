@@ -41,12 +41,43 @@ struct HostView: View {
                 SyncWarningView(issues:model.syncIssues,input:model.healthInput,rtt:model.timingDevice?.rtt ?? 0,jitter:model.timingDevice?.jitter ?? 0,remoteIssues:Array(Set(model.devices.flatMap(\.syncIssues))))
                 if model.active { RealtimeStatusView(phase:model.sessionPhase,traffic:model.traffic,drops:model.localDrops,schedulingErrorMS:model.schedulingErrorMS,updated:model.lastUpdated,timing:TimingSummaryView(latency:model.latency,rtt:model.timingDevice?.rtt ?? 0,offset:model.timingDevice?.offset ?? 0,jitter:model.timingDevice?.jitter ?? 0,uncertainty:model.healthInput.uncertainty,drops:model.localDrops,peerName:model.timingDevice?.name)) }
                 LiveActivitySettingsView()
+                if model.devices.contains(where: { !$0.gate.approved }) {
+                    Section("Pairing requests") {
+                        Text("Compare the six-digit code on both devices. Approve only the device you recognize. Unapproved devices receive no audio.").font(.caption).foregroundStyle(.secondary)
+                        ForEach(model.devices.filter { !$0.gate.approved }) { device in
+                            VStack(alignment:.leading,spacing:8) {
+                                Label(device.name,systemImage:"iphone")
+                                if let code = device.pairingCode {
+                                    Text(verbatim:code).font(.title2.monospacedDigit()).textSelection(.enabled)
+                                    HStack {
+                                        Button("Approve") { model.approveDevice(device.id) }.buttonStyle(.glassProminent)
+                                        Button("Reject",role:.destructive) { model.rejectDevice(device.id) }.buttonStyle(.glass)
+                                    }
+                                } else { Text("Authenticating…").foregroundStyle(.secondary) }
+                            }
+                        }
+                    }
+                }
                 Section("Connected Devices") {
-                    if model.devices.isEmpty { Text("Connect from MusicSync on another iPhone or Mac.").foregroundStyle(.secondary) }
-                    ForEach(model.devices) { device in
-                        VStack(alignment:.leading,spacing:6) {
+                    if !model.devices.contains(where: { $0.gate.approved }) { Text("Connect from MusicSync on another iPhone or Mac.").foregroundStyle(.secondary) }
+                    ForEach(model.devices.filter { $0.gate.approved }) { device in
+                        VStack(alignment:.leading,spacing:8) {
                             Label(device.name,systemImage:"iphone")
                             Text(device.ready ? tr("Clock synchronized") : tr("Synchronizing…")).foregroundStyle(.secondary)
+                            LabeledContent("Current output channel",value:device.effectiveChannel.title)
+                            if model.streaming && device.ready { Text(tr(device.playbackState)).foregroundStyle(.secondary) }
+                            Picker("Output channel",selection:Binding(
+                                get:{ model.devices.first(where: { $0.id == device.id }).map { $0.pendingChannel ?? $0.channelSelection } ?? .automatic },
+                                set:{ model.setChannel(device.id,selection:$0) })) {
+                                ForEach(ChannelSelection.allCases) { channel in Text(channel.title).tag(channel) }
+                            }
+                            if device.pendingChannel != nil { Text("Waiting for channel confirmation…").font(.caption).foregroundStyle(.secondary) }
+                            HStack {
+                                Button("Play Identification Tone") { model.identifyDevice(device.id) }.buttonStyle(.glass)
+                                    .disabled(Date().timeIntervalSince(device.lastIdentify) < 2)
+                                Button("Remove Pairing",role:.destructive) { model.forgetDevice(device.id) }.buttonStyle(.glass)
+                            }
+                            if device.identifyingUntil > Date() { Label("Playing identification tone",systemImage:"speaker.wave.3.fill").foregroundStyle(.secondary) }
                             if !device.syncIssues.isEmpty { Label("Client reports sync risk",systemImage:"exclamationmark.triangle.fill").foregroundStyle(.orange) }
                             if device.ready {
                                 Text(String(format:tr("RTT %.1f ms · Clock %+.1f ms"),device.rtt * 1000,device.offset * 1000)).monospacedDigit()
@@ -54,7 +85,10 @@ struct HostView: View {
                             }
                         }
                     }
+                    Button("Identify This Host") { model.identifyHost() }.buttonStyle(.glass).disabled(!model.active)
+                    Text("Channel changes affect upcoming audio after the queued buffers finish. Identification plays three short chirps only on the selected device.").font(.caption).foregroundStyle(.secondary)
                 }
+                if let notice = model.pairingNotice { Section("Pairing storage") { Text(notice).font(.caption).foregroundStyle(.secondary) } }
                 Section("Audio") {
                     #if os(macOS)
                     Picker("Capture",selection:$model.mode) {

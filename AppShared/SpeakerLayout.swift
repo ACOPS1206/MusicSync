@@ -31,3 +31,7 @@ enum ChannelSelection: String, CaseIterable, Identifiable {
         }
     }
 }
+
+extension OutputChannel {
+    var title: String { ChannelSelection(rawValue:rawValue)?.title ?? tr("Stereo") }
+}

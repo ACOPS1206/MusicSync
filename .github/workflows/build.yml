@@ -28,6 +28,8 @@ jobs:
         run: swift test --package-path Shared/MusicSyncCore
       - name: Test real file decode, stereo routing and sample timeline
         run: bash scripts/test_audio.sh
+      - name: Test Host pairing, channel control and reconnect over TCP
+        run: bash scripts/test_pairing.sh
       - name: Build both apps and verify packaging
         run: bash scripts/build.sh
       - name: Upload iOS app and unsigned IPA

@@ -16,6 +16,7 @@ struct ConnectedDevice: Identifiable {
     let id: UUID
     var name = "iPhone"
     var ready = false
+    var playbackState = "Synchronizing"
     var rtt = 0.0
     var offset = 0.0
     var jitter = 0.0
@@ -23,6 +24,17 @@ struct ConnectedDevice: Identifiable {
     var syncIssues: [SyncIssue] = []
     var dropped = 0
     var lastStats = 0.0
+    var gate = PairingGate()
+    var rejected = false
+    var deviceID: String?
+    var nonce = UUID().uuidString
+    var pairingCode: String?
+    var channelSelection = ChannelSelection.automatic
+    var effectiveChannel = OutputChannel.stereo
+    var pendingChannel: ChannelSelection?
+    var channelRequestID: String?
+    var identifyingUntil = Date.distantPast
+    var lastIdentify = Date.distantPast
 }
 
 @MainActor final class HostModel: ObservableObject {
@@ -42,7 +54,14 @@ struct ConnectedDevice: Identifiable {
     private var isMonitor = false
     @Published var active = false
     @Published var directOnly = false
+    @Published private(set) var listeningPort: UInt16?
     @Published var connectionAddress = ""
+    @Published var serviceName = ""
+    @Published var pairingNotice: String?
+    private let hostID = PairingStore.identity("host")
+    private var sessionSecrets: [String:String] = [:]
+    private var revokedIDs: Set<String> = []
+    private let identifierSound = IdentificationSound()
     @Published var streaming = false
     @Published var busy = false
     @Published var status = tr("Ready")
@@ -52,7 +71,7 @@ struct ConnectedDevice: Identifiable {
     @Published var mode = 0 { didSet { if mode == 1 { layout = .stereo } } }
     @Published var fileURL: URL?
     @Published var fileName = ""
-    @Published var layout = SpeakerLayout.stereo { didSet { player.channel = layout.localChannel } }
+    @Published var layout = SpeakerLayout.stereo { didSet { player.channel = layout.localChannel; sendLayout() } }
     @Published var calibrationMS = 0.0
     private var listener: NWListener?
     private var peers: [UUID: Peer] = [:]
@@ -93,12 +112,14 @@ struct ConnectedDevice: Identifiable {
             #else
             let name = UIDevice.current.name + " · MusicSync"
             #endif
+            serviceName = name
             if !directOnly { listener.service = NWListener.Service(name: name, type: LAN.service) }
             listener.newConnectionHandler = { [weak self] connection in MainActor.assumeIsolated { self?.accept(connection)  } }
             listener.stateUpdateHandler = { [weak self, weak listener] state in MainActor.assumeIsolated {
                 guard let self else { return }
                 switch state {
                 case .ready:
+                    self.listeningPort = listener?.port?.rawValue
                     self.active = true; self.status = tr("Host available on LAN"); self.sessionPhase = "Waiting"; self.startStatusTimer()
                     #if os(macOS)
                     if let name = SCDynamicStoreCopyLocalHostName(nil) as String?, let port = listener?.port {
@@ -119,12 +140,14 @@ struct ConnectedDevice: Identifiable {
     }
     func stopHost() {
         Task { await stopStreaming() }
-        listener?.cancel(); listener = nil; connectionAddress = ""
+        listener?.cancel(); listener = nil; connectionAddress = ""; listeningPort = nil
+        identifierSound.stop()
         for peer in peers.values { peer.cancel() }
         peers.removeAll(); devices.removeAll(); active = false; status = tr("Stopped"); sessionPhase = "Stopped"
         statusTimer?.invalidate(); statusTimer = nil; syncIssues = []
     }
     private func accept(_ connection: NWConnection) {
+        guard peers.count < 16 else { connection.cancel(); return }
         let peer = Peer(connection, queue: .main)
         peers[peer.id] = peer; devices.append(ConnectedDevice(id: peer.id))
         peer.onMessage = { [weak self, weak peer] message in
@@ -140,28 +163,120 @@ struct ConnectedDevice: Identifiable {
             }
         }
         peer.start()
+        DispatchQueue.main.asyncAfter(deadline:.now()+60) { [weak self, weak peer] in
+            guard let self, let peer, let device = self.devices.first(where: { $0.id == peer.id }), !device.gate.approved else { return }
+            self.rejectDevice(peer.id)
+        }
+    }
+    private func hostInfo(_ kind: String) -> Message {
+        var message = Message(kind); message.pairingVersion = 1; message.hostID = hostID
+        message.name = serviceName; message.serviceName = directOnly ? nil : serviceName; message.hostAddress = connectionAddress
+        return message
     }
     private func handle(_ message: Message, from peer: Peer) {
-        if message.kind == "ping", let t1 = message.t1 {
+        guard let index = devices.firstIndex(where: { $0.id == peer.id }), !devices[index].rejected, devices[index].gate.permits(message.kind) else { return }
+        if message.kind == "hello" {
+            guard !devices[index].gate.approved, devices[index].deviceID == nil else { return }
+            guard message.pairingVersion == 1, let id = message.deviceID, UUID(uuidString:id) != nil else { rejectDevice(peer.id); return }
+            devices[index].deviceID = id; devices[index].name = String((message.name ?? "MusicSync Client").prefix(80))
+            devices[index].channelSelection = ChannelSelection(rawValue:message.channelSelection ?? "automatic") ?? .automatic
+            var challenge = hostInfo("pairChallenge"); challenge.nonce = devices[index].nonce; peer.send(challenge)
+        } else if message.kind == "pairRequest" {
+            requestApproval(peer.id)
+        } else if message.kind == "pairProof" {
+            guard !devices[index].gate.approved, let id = devices[index].deviceID else { return }
+            let secret = sessionSecrets[id] ?? PairingStore.read("host." + id)
+            if !revokedIDs.contains(id), let secret, let proof = message.pairingProof,
+               PairingProof.verify(proof,secret:secret,nonce:devices[index].nonce,hostID:hostID,clientID:id) {
+                authorize(peer.id,secret:nil)
+            } else { requestApproval(peer.id) }
+        } else if message.kind == "ping", let t1 = message.t1 {
             var response = Message("pong"); response.t1 = t1
-            response.t2 = SyncClock.now; response.t3 = SyncClock.now
-            peer.send(response)
-        } else if message.kind == "hello", let index = devices.firstIndex(where: { $0.id == peer.id }) {
-            devices[index].name = String((message.name ?? "iPhone").prefix(80))
-        } else if message.kind == "stats", let index = devices.firstIndex(where: { $0.id == peer.id }),
+            response.t2 = SyncClock.now; response.t3 = SyncClock.now; peer.send(response)
+        } else if message.kind == "channelReport" {
+            updatePlaybackState(message, index:index)
+            if let raw = message.channelSelection, let selection = ChannelSelection(rawValue:raw) { devices[index].channelSelection = selection }
+            if let raw = message.outputChannel, let channel = OutputChannel(rawValue:raw) { devices[index].effectiveChannel = channel }
+            if message.requestID == devices[index].channelRequestID { devices[index].pendingChannel = nil; devices[index].channelRequestID = nil }
+        } else if message.kind == "identifyResult" {
+            if message.accepted == true { devices[index].identifyingUntil = Date().addingTimeInterval(1) }
+            else if let text = message.name { error = String(format:tr("Identification tone unavailable: %@"),String(text.prefix(200))) }
+        } else if message.kind == "identifyHost" {
+            identifyHost()
+        } else if message.kind == "stats",
                   let rtt = message.rtt, let offset = message.offset, let jitter = message.jitter,
                   let requested = message.latency, [rtt,offset,jitter,requested].allSatisfy({ $0.isFinite }),
                   rtt >= 0, rtt < 1, jitter >= 0, requested >= 0.18, requested <= 0.5 {
+            updatePlaybackState(message,index:index)
             devices[index].ready = true; devices[index].rtt = rtt; devices[index].offset = offset
-            devices[index].jitter = jitter; devices[index].request = requested
-            devices[index].lastStats = SyncClock.now
-            if let raw = message.syncWarning { devices[index].syncIssues = raw.split(separator: ",").compactMap { SyncIssue(rawValue: String($0)) } }
+            devices[index].jitter = jitter; devices[index].request = requested; devices[index].lastStats = SyncClock.now
+            if let raw = message.syncWarning { devices[index].syncIssues = raw.split(separator:",").compactMap { SyncIssue(rawValue:String($0)) } }
             if let count = message.dropped, (0...1_000_000).contains(count) { devices[index].dropped = count }
-            delay.update(rtt: rtt, jitter: jitter, requested: requested)
-            latency = delay.target
-            var timeline = Message("timeline"); timeline.latency = latency
-            peer.send(timeline)
+            if let raw = message.channelSelection, let selection = ChannelSelection(rawValue:raw) { devices[index].channelSelection = selection }
+            if let raw = message.outputChannel, let channel = OutputChannel(rawValue:raw) { devices[index].effectiveChannel = channel }
+            delay.update(rtt:rtt,jitter:jitter,requested:requested); latency = delay.target
+            var timeline = Message("timeline"); timeline.latency = latency; peer.send(timeline)
         }
+    }
+    private func updatePlaybackState(_ message: Message, index: Int) {
+        if let state = message.playbackState, ["Waiting","Streaming","Interrupted","Synchronizing"].contains(state) { devices[index].playbackState = state }
+    }
+    private func requestApproval(_ id: UUID) {
+        guard let index = devices.firstIndex(where: { $0.id == id }), devices[index].deviceID != nil, !devices[index].gate.approved else { return }
+        if devices[index].pairingCode == nil { devices[index].pairingCode = String(format:"%06d",Int.random(in:0...999_999)) }
+        var pending = hostInfo("pairPending"); pending.pairingCode = devices[index].pairingCode
+        peers[id]?.send(pending)
+    }
+    func approveDevice(_ id: UUID) {
+        guard let device = devices.first(where: { $0.id == id }), let clientID = device.deviceID, device.pairingCode != nil, !device.gate.approved, !device.rejected else { return }
+        let secret = PairingProof.newSecret(); sessionSecrets[clientID] = secret; revokedIDs.remove(clientID)
+        do { try PairingStore.write(secret,account:"host." + clientID) }
+        catch { pairingNotice = error.localizedDescription }
+        // A replaced pairing invalidates any other live socket claiming this device identity.
+        for other in devices where other.id != id && other.deviceID == clientID { rejectDevice(other.id) }
+        authorize(id,secret:secret)
+    }
+    private func authorize(_ id: UUID, secret: String?) {
+        guard let index = devices.firstIndex(where: { $0.id == id }), !devices[index].rejected else { return }
+        devices[index].gate.approve(); devices[index].pairingCode = nil
+        var approved = hostInfo("pairApproved"); approved.pairingSecret = secret
+        approved.outputChannel = layout.remoteChannel.rawValue; peers[id]?.send(approved)
+    }
+    func rejectDevice(_ id: UUID) {
+        guard let peer = peers[id], let index = devices.firstIndex(where: { $0.id == id }) else { return }
+        devices[index].rejected = true; devices[index].ready = false; devices[index].gate = PairingGate()
+        peer.send(Message("pairRejected"))
+        DispatchQueue.main.asyncAfter(deadline:.now()+0.2) { [weak peer] in peer?.cancel() }
+    }
+    func forgetDevice(_ id: UUID) {
+        guard let device = devices.first(where: { $0.id == id }), let clientID = device.deviceID else { return }
+        do { try PairingStore.remove("host." + clientID) }
+        catch { pairingNotice = error.localizedDescription }
+        revokedIDs.insert(clientID); sessionSecrets[clientID] = nil
+        for other in devices where other.deviceID == clientID { rejectDevice(other.id) }
+    }
+    func setChannel(_ id: UUID, selection: ChannelSelection) {
+        guard let index = devices.firstIndex(where: { $0.id == id }), devices[index].gate.approved else { return }
+        let request = UUID().uuidString; devices[index].pendingChannel = selection; devices[index].channelRequestID = request
+        var message = Message("setChannel"); message.channelSelection = selection.rawValue
+        message.outputChannel = layout.remoteChannel.rawValue; message.requestID = request; peers[id]?.send(message)
+        DispatchQueue.main.asyncAfter(deadline:.now()+3) { [weak self] in
+            guard let self, let index = self.devices.firstIndex(where: { $0.id == id }), self.devices[index].channelRequestID == request else { return }
+            self.devices[index].pendingChannel = nil; self.devices[index].channelRequestID = nil
+            self.error = tr("The Client did not confirm the channel change. Check its connection.")
+        }
+    }
+    private func sendLayout() {
+        var message = Message("hostChannel"); message.outputChannel = layout.remoteChannel.rawValue
+        for device in devices where device.gate.approved { peers[device.id]?.send(message) }
+    }
+    func identifyDevice(_ id: UUID) {
+        guard let index = devices.firstIndex(where: { $0.id == id }), devices[index].gate.approved,
+              Date().timeIntervalSince(devices[index].lastIdentify) >= 2 else { return }
+        devices[index].lastIdentify = Date(); peers[id]?.send(Message("identify"))
+    }
+    func identifyHost() {
+        do { _ = try identifierSound.play() } catch { self.error = error.localizedDescription }
     }
     func startStreaming(testTone: Bool = false) async {
         guard active, !streaming, !busy else { return }
@@ -230,7 +345,7 @@ struct ConnectedDevice: Identifiable {
         streaming = false; toneTimer?.invalidate(); toneTimer = nil
         await capture?.stop(); capture = nil; player.stop(); nextPTS = nil
         var message = Message("stop"); message.epoch = epoch
-        for peer in peers.values { peer.send(message) }
+        for device in devices where device.gate.approved { peers[device.id]?.send(message) }
         status = active ? tr("Host available on LAN") : tr("Stopped")
         sessionPhase = active ? "Waiting" : "Stopped"; health = SyncHealthMonitor(); syncIssues = []; isMonitor = false
     }
@@ -275,7 +390,7 @@ struct ConnectedDevice: Identifiable {
                 if !player.schedule(message, offset: 0) { localDrops += 1 }
                 peakScheduleError = max(peakScheduleError, player.schedulingError)
             }
-            for device in devices where device.ready { peers[device.id]?.send(message) }
+            for device in devices where device.ready && device.gate.approved { peers[device.id]?.send(message) }
         }
         if now - lastPublished > 1 { latency = delay.target; lastPublished = now }
     }

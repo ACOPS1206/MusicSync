@@ -19,6 +19,19 @@ public struct Message: Codable {
     public var version = 1
     public var kind: String
     public var name: String?
+    public var pairingVersion: Int?
+    public var deviceID: String?
+    public var hostID: String?
+    public var hostAddress: String?
+    public var serviceName: String?
+    public var nonce: String?
+    public var pairingCode: String?
+    public var pairingProof: String?
+    public var pairingSecret: String?
+    public var channelSelection: String?
+    public var requestID: String?
+    public var accepted: Bool?
+    public var playbackState: String?
     public var t1: Double?
     public var t2: Double?
     public var t3: Double?

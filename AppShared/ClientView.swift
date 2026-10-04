@@ -16,6 +16,35 @@ struct ClientView: View {
                         Button("Find Nearby Hosts") { model.search() }.buttonStyle(.glassProminent)
                     }
                 }
+                if model.selectedName != nil {
+                    Section("Connected Host") {
+                        LabeledContent("Host name",value:model.connectedHostName.isEmpty ? (model.selectedName ?? "") : model.connectedHostName)
+                        if !model.hostAddress.isEmpty {
+                            LabeledContent("Host connection address",value:model.hostAddress).textSelection(.enabled)
+                            Button("Copy Host Address") {
+                                #if os(macOS)
+                                NSPasteboard.general.clearContents(); NSPasteboard.general.setString(model.hostAddress,forType:.string)
+                                #else
+                                UIPasteboard.general.string = model.hostAddress
+                                #endif
+                            }.buttonStyle(.glass)
+                        }
+                        if !model.hostServiceName.isEmpty {
+                            LabeledContent("Bonjour service",value:model.hostServiceName + " · _musicsync._tcp.local").textSelection(.enabled)
+                        }
+                        if !model.paired {
+                            if !model.pairingCode.isEmpty {
+                                LabeledContent("Pairing code") { Text(verbatim:model.pairingCode).font(.title2.monospacedDigit()).textSelection(.enabled) }
+                                Text("Check that the Host shows the same code, then approve this device on the Host. This also applies when another iPhone is the Host.").font(.caption).foregroundStyle(.secondary)
+                            } else { Text("Authenticating with Host…").foregroundStyle(.secondary) }
+                        } else {
+                            Label("Paired",systemImage:"checkmark.shield")
+                            Button("Identify Host") { model.identifyHost() }.buttonStyle(.glass)
+                            Button("Forget This Host",role:.destructive) { model.forgetHost() }.buttonStyle(.glass)
+                        }
+                        if let notice = model.pairingNotice { Text(notice).font(.caption).foregroundStyle(.secondary) }
+                    }
+                }
                 SyncWarningView(issues:model.syncIssues,input:model.healthInput,rtt:model.rtt,jitter:model.jitter)
                 if model.selectedName != nil {
                     RealtimeStatusView(phase:model.sessionPhase,traffic:model.traffic,drops:model.dropped,schedulingErrorMS:model.schedulingErrorMS,updated:model.lastUpdated,timing:TimingSummaryView(latency:model.latency,rtt:model.rtt,offset:model.offset,jitter:model.jitter,uncertainty:model.uncertainty,drops:model.dropped))
@@ -32,7 +61,7 @@ struct ClientView: View {
                             HStack {
                                 Label(mac.name,systemImage:"laptopcomputer")
                                 Spacer()
-                                if model.selectedName == mac.name { Image(systemName:model.connected ? "checkmark.circle.fill" : "arrow.triangle.2.circlepath") }
+                                if model.selectedName == mac.name { Image(systemName:model.paired ? "checkmark.circle.fill" : "arrow.triangle.2.circlepath") }
                             }
                         }
                     }
@@ -56,10 +85,12 @@ struct ClientView: View {
                 }
                 if model.selectedName != nil {
                     Section("Speaker layout") {
+                        LabeledContent("Current output channel",value:model.effectiveChannel.title)
+                        if model.identifyingUntil > Date() { Label("Playing identification tone",systemImage:"speaker.wave.3.fill").foregroundStyle(.secondary) }
                         Picker("Output channel", selection: $model.channelOverride) {
                             ForEach(ChannelSelection.allCases) { channel in Text(channel.title).tag(channel) }
                         }
-                        Text("Follow Host applies the Host stereo pair assignment. Select Left or Right manually when more than two devices are connected.").font(.caption).foregroundStyle(.secondary)
+                        Text("Follow Host applies the Host stereo pair assignment. You can choose a channel here, and the Host can change this selection remotely. Changes affect upcoming audio after queued buffers finish.").font(.caption).foregroundStyle(.secondary)
                     }
                     Section("Speaker calibration") {
                         LabeledContent("Client timing trim",value:String(format:"%+.0f ms",model.calibrationMS))

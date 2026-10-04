@@ -14,6 +14,10 @@ struct HelpView: View {
                     Text("Apple Music subscription audio is DRM protected and cannot be exported into the MusicSync PCM stream. The picker hides protected and cloud-only items. Download your own DRM-free music first, or import an audio file from Files.")
                     Text("For LiveContainer hosting, enable Direct connection only before starting Host if Bonjour advertising is blocked. Copy the iPhone Host address into the other device. Local Network access is still required; container permissions can also affect music library import.")
                 }
+                Section("Pairing & device control") {
+                    Text("Connect to a Host, compare the six-digit code on both screens, then approve on the Host within 60 seconds. Mac and iPhone Hosts use the same approval flow. A remembered pairing authenticates each reconnect with a fresh challenge. Remove Pairing or Forget This Host revokes or removes the saved pairing. Both devices need MusicSync 0.5 or later.")
+                    Text("The Host device list shows each Client’s reported output channel. Change it from either device, or play an identification tone on just that Client. The Client displays the Host address and Bonjour service. Pairing controls access but initial pairing and PCM are not encrypted; use a trusted LAN. If Keychain is unavailable in LiveContainer, approval works for this app session and may be requested again after restart.")
+                }
                 Section("Stereo pair") {
                     Text("In stereo pair mode, Test Tone plays a shared alignment pulse, then a lower left-only tone, then a higher right-only tone each second.")
                     Text("Choose Host left · Client right or Host right · Client left in Speaker layout before streaming. Place the devices on their assigned sides. Client Follow Host applies that assignment automatically. With multiple Clients, choose each output channel manually. Mono source files cannot create a true stereo image.")
