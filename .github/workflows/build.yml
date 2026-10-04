@@ -1,0 +1,51 @@
+name: Build MusicSync
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: musicsync-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.0.1.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm Xcode 26 SDK (iOS 26 API compatibility)
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks
+      - name: Check deterministic Xcode project
+        run: |
+          python3 scripts/generate_project.py
+          git diff --exit-code
+      - name: Test protocol, clocks and jitter buffer
+        run: swift test --package-path Shared/MusicSyncCore
+      - name: Build both apps and verify packaging
+        run: bash scripts/build.sh
+      - name: Upload iOS app and unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: MusicSync-iOS
+          path: |
+            dist/MusicSync-iOS.ipa
+            dist/MusicSync-iOS.app.zip
+          if-no-files-found: error
+      - name: Upload macOS app
+        uses: actions/upload-artifact@v4
+        with:
+          name: MusicSync-macOS
+          path: dist/MusicSync-macOS.zip
+          if-no-files-found: error
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MusicSync-build-logs
+          path: dist/*-build.log
+          if-no-files-found: ignore
