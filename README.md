@@ -7,7 +7,7 @@ This is a functional first implementation, not a claim of measured ±3 ms acoust
 ## Repository
 
 - `MusicSync.xcodeproj`: shared `MusicSyncMac` and `MusicSynciOS` schemes.
-- `Shared/MusicSyncCore`: local Swift package; versioned framing, Network.framework peer transport, monotonic clock estimation, adaptive delay, bounded jitter queue and XCTest tests.
+- `Shared/MusicSyncCore`: local Swift package; versioned framing, Network.framework peer transport, monotonic clock estimation, adaptive delay, bounded jitter queue and XCTest tests (including real loopback TCP ping/PCM transport).
 - `macOS/MusicSyncMac`: Host, CoreAudio process tap and ScreenCaptureKit alternative.
 - `iOS/MusicSynciOS`: Bonjour browsing, receiver, reconnection, clock probes and jitter buffer.
 - `AppShared/PCMPlayer.swift`: AVAudioEngine / AVAudioPlayerNode scheduled playback.

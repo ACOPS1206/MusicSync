@@ -51,7 +51,7 @@ for platform, folder, app, scheme in [('macOS','macOS/MusicSyncMac','MusicSync-m
 </Scheme>''')
     info={'CFBundleDevelopmentRegion':'en','CFBundleExecutable':'$(EXECUTABLE_NAME)','CFBundleIdentifier':'$(PRODUCT_BUNDLE_IDENTIFIER)','CFBundleName':'MusicSync','CFBundleDisplayName':'MusicSync','CFBundlePackageType':'APPL','CFBundleShortVersionString':'$(MARKETING_VERSION)','CFBundleVersion':'$(CURRENT_PROJECT_VERSION)','NSLocalNetworkUsageDescription':'MusicSync discovers your Mac and streams audio to nearby devices on your local network.','NSBonjourServices':['_musicsync._tcp']}
     if platform=='macOS': info.update(LSMinimumSystemVersion='$(MACOSX_DEPLOYMENT_TARGET)',NSAudioCaptureUsageDescription='MusicSync captures system audio to replay it in sync on your Mac and iPhone.',NSScreenCaptureUsageDescription='Monitor mode captures system audio with ScreenCaptureKit; screen images are not transmitted.',NSPrincipalClass='NSApplication')
-    else: info.update(LSRequiresIPhoneOS=True,UILaunchScreen={},UIBackgroundModes=['audio'],UISupportedInterfaceOrientations=['UIInterfaceOrientationPortrait','UIInterfaceOrientationLandscapeLeft','UIInterfaceOrientationLandscapeRight'])
+    else: info.update(LSRequiresIPhoneOS=True,UILaunchScreen={},UIBackgroundModes=['audio'],UISupportedInterfaceOrientations=['UIInterfaceOrientationPortrait','UIInterfaceOrientationPortraitUpsideDown','UIInterfaceOrientationLandscapeLeft','UIInterfaceOrientationLandscapeRight'])
     (root/folder/'Info.plist').write_bytes(plistlib.dumps(info))
     (root/folder/'MusicSync.entitlements').write_bytes(plistlib.dumps({}))
 add('products','isa = PBXGroup; name = Products; children = '+array(productrefs)+'; sourceTree = "<group>";')
