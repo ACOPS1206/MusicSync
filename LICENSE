@@ -1,0 +1,139 @@
+MusicSync Attribution-NonCommercial-SourceSharing License 1.0
+SPDX-License-Identifier: LicenseRef-MusicSync-Attribution-NonCommercial-SourceSharing-1.0
+
+Copyright (c) 2026 ACOPS1206
+Project: MusicSync
+Original source: https://github.com/ACOPS1206/MusicSync
+
+This is a project-specific source-available software license. It is not
+CC BY-NC-SA, GPL, AGPL, or an OSI-approved open-source license.
+
+1. Definitions and scope
+
+"Original Material" means the MusicSync code, documentation, build scripts,
+and other material whose rights holder applies this license, including the
+MusicSyncCore package. Independently licensed third-party material is excluded.
+
+"Covered Project" means the Original Material, its modifications, and the
+software project that incorporates any copyright-protected portion of it by
+copying, embedding, compiling, or linking that portion into a program. This
+includes the combined program's application-specific modules, not merely the
+copied MusicSync files. Independent programs that only communicate through
+ordinary network protocols, independent works in an aggregate distribution,
+and System Dependencies are excluded.
+
+"System Dependencies" means independently licensed operating systems, SDKs,
+compilers, runtimes, standard system libraries, and unmodified independently
+licensed third-party packages. Their own licenses continue to apply; this
+license does not require relicensing them or disclosing their proprietary
+source. Their identity, version, license, and public acquisition instructions
+must be documented when needed to build the Covered Project. If a dependency
+cannot lawfully be combined with these terms, this license does not grant
+permission to distribute that combination.
+
+"Corresponding Source" means the complete, unobfuscated preferred form for
+modifying the Covered Project, including application-specific source modules,
+modifications, project files, dependency/version declarations, and scripts and
+instructions needed to build, install, and run the distributed or served
+version. A patch alone, interface stubs, minified/generated output without its
+editable source, or only the reused MusicSync files is not sufficient. Private
+keys, signing certificates, account credentials, personal data, and System
+Dependencies need not be disclosed. Document how a user supplies their own
+credentials or uses an unsigned build where applicable.
+
+"NonCommercial" means not primarily intended for or directed toward commercial
+advantage or monetary compensation. Being a nonprofit organization, or offering
+an app without an upfront price, does not by itself make a use NonCommercial.
+Paid products, paid access, advertising-funded products, and commercial services
+incorporating the Original Material are not permitted under this license.
+
+2. Permission
+
+Subject to all terms below, each rights holder grants you a worldwide,
+royalty-free, nonexclusive license to use, reproduce, study, modify, quote,
+compile, and distribute their Original Material, and make and distribute a
+Covered Project, solely for NonCommercial purposes. Commercial permission
+requires a separate written agreement with the relevant rights holders.
+
+You may keep personal/private NonCommercial modifications private while they
+are neither distributed nor made available for interaction with other users
+over a network. Copyright exceptions, fair use, and other rights that apply
+without a license are not restricted by this license.
+
+3. Attribution and notices
+
+When sharing the Original Material, code excerpts, or a Covered Project:
+
+(a) preserve supplied author/copyright notices and this license;
+(b) identify MusicSync and ACOPS1206, link to the original repository where
+    reasonably practicable, and identify this license;
+(c) identify your modifications and their author without implying endorsement;
+(d) include LICENSE and NOTICE with source and binary distributions; and
+(e) make the attribution reasonably accessible to users of distributed apps or
+    services, for example in About, Help, Credits, or accompanying documentation.
+
+For a publicly shared code excerpt, place the attribution alongside the excerpt
+or in the containing document's clearly identified credits. Reasonable formats
+are allowed; a particular visual design or exact sentence is not mandatory.
+The attribution example in NOTICE may be used. Warranty disclaimers must remain.
+
+4. Public source sharing and reciprocal licensing
+
+If you distribute a Covered Project in source or binary form, or allow users
+other than yourself to interact with it over a network, you must, no later than
+that distribution or availability:
+
+(a) publish its complete Corresponding Source at a publicly accessible download
+    URL or public source repository, without payment, login, or a nondisclosure
+    agreement; identify the exact source revision matching each version;
+(b) include a prominent, working source link in the application/service or its
+    accompanying documentation, and give that link to recipients;
+(c) license your application-specific contributions to that Covered Project
+    under this same license, and preserve recipients' rights to access, modify,
+    and redistribute it for NonCommercial purposes; and
+(d) keep that source available while you distribute or serve the version and
+    for at least three years after you last distribute or serve it. Recipients
+    may archive and redistribute that source under this license.
+
+Do not publish, serve, or distribute a Covered Project if you lack authority to
+meet these obligations for its application-specific source. You may not conceal
+that source in a proprietary linked module to avoid this section, replace this
+license with a closed-source license for a Covered Project, or impose terms or
+technical measures that prevent the granted NonCommercial rights. Separately
+licensed System Dependencies and independent programs retain their licenses.
+
+5. Rights not granted and historical versions
+
+No trademark, endorsement, publicity, or third-party rights are granted.
+You are responsible for obtaining rights needed for third-party content,
+including audio handled by the software. The rights granted are limited to
+rights that the licensor is authorized to grant.
+
+This license applies prospectively to revisions identified as using it.
+Earlier revisions published under MIT remain available under those earlier
+terms. This license does not revoke previously granted MIT permissions or
+prevent recipients from using that historical material under its original
+license. Rights to new changes are determined by the license of those changes.
+No repository history is rewritten by this license change.
+
+6. Termination and restoration
+
+Permissions under this license terminate automatically upon a material breach.
+They are restored automatically if you fully cure the breach within 30 days
+of discovering it, or otherwise by express written permission from the rights
+holder. Restoration does not remove liability for earlier violations.
+Subject to compliance, changing how future versions are licensed does not
+withdraw permissions already granted to compliant recipients for this version.
+
+7. No warranty; limitation of liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE MATERIAL IS PROVIDED
+"AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+LIMITED TO MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN CONTRACT, TORT, OR
+OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE MATERIAL OR ITS USE.
+
+Mandatory rights and liabilities that cannot legally be excluded are unaffected.
+If a provision is unenforceable, the remaining provisions continue to apply to
+the extent legally possible. The license text controls over informal summaries.

@@ -1,0 +1,4 @@
+"NSLocalNetworkUsageDescription" = "MusicSync discovers your Mac and streams audio to nearby devices on your local network.";
+"NSAudioCaptureUsageDescription" = "MusicSync captures system audio to replay it in sync on your Mac and iPhone.";
+"NSScreenCaptureUsageDescription" = "Monitor mode captures system audio with ScreenCaptureKit; screen images are not transmitted.";
+"NSAppleMusicUsageDescription" = "Choose downloaded DRM-free songs from your music library to stream to nearby devices.";
