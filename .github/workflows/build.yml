@@ -26,6 +26,8 @@ jobs:
           git diff --exit-code
       - name: Test protocol, clocks and jitter buffer
         run: swift test --package-path Shared/MusicSyncCore
+      - name: Test real file decode, stereo routing and sample timeline
+        run: bash scripts/test_audio.sh
       - name: Build both apps and verify packaging
         run: bash scripts/build.sh
       - name: Upload iOS app and unsigned IPA

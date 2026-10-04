@@ -25,6 +25,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>MusicSync lets you select downloaded DRM-free songs from your music library to stream to your nearby devices.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_musicsync._tcp</string>

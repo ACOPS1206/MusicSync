@@ -28,6 +28,7 @@ public struct Message: Codable {
     public var sampleRate: Double?
     public var channels: Int?
     public var frames: Int?
+    public var outputChannel: String?
     public var payload: Data?
     public init(_ kind: String) { self.kind = kind }
     public var validAudio: Bool {
@@ -132,5 +133,13 @@ public struct JitterQueue {
             if local < now + minimumLead { drops += 1 } else { result.append(packet) }
         }
         return result
+    }
+}
+
+/// Both channels remain on the wire; each speaker selects locally.
+public enum OutputChannel: String, CaseIterable, Sendable {
+    case stereo, left, right
+    public func sourceIndex(forOutput channel: Int) -> Int {
+        switch self { case .stereo: return channel; case .left: return 0; case .right: return 1 }
     }
 }

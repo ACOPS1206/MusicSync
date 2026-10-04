@@ -2,7 +2,11 @@ import SwiftUI
 import Network
 import MusicSyncCore
 import AVFoundation
+#if os(macOS)
 import SystemConfiguration
+#else
+import UIKit
+#endif
 
 struct ConnectedDevice: Identifiable {
     let id: UUID
@@ -16,6 +20,7 @@ struct ConnectedDevice: Identifiable {
 
 @MainActor final class HostModel: ObservableObject {
     @Published var active = false
+    @Published var directOnly = false
     @Published var connectionAddress = ""
     @Published var streaming = false
     @Published var busy = false
@@ -24,6 +29,10 @@ struct ConnectedDevice: Identifiable {
     @Published var devices: [ConnectedDevice] = []
     @Published var latency = 0.18
     @Published var mode = 0
+    @Published var fileURL: URL?
+    @Published var fileName = ""
+    @Published var layout = SpeakerLayout.stereo { didSet { player.channel = layout.localChannel } }
+    @Published var calibrationMS = 0.0
     private var listener: NWListener?
     private var peers: [UUID: Peer] = [:]
     private var capture: AudioCapture?
@@ -37,6 +46,7 @@ struct ConnectedDevice: Identifiable {
     private var phase = 0.0
     private var observer: NSObjectProtocol?
     init() {
+        #if os(macOS)
         observer = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated {
             guard let self else { return }
             // Restore tapped process output before the application exits.
@@ -46,22 +56,38 @@ struct ConnectedDevice: Identifiable {
                 _ = semaphore.wait(timeout: .now() + 1)
             }
          } }
+        #else
+        observer = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated {
+            _ = Task { await self?.stopStreaming() }
+        } }
+        #endif
     }
     func startHost() {
         guard !active else { return }
         error = nil
         do {
             let listener = try NWListener(using: LAN.parameters())
-            listener.service = NWListener.Service(name: Host.current().localizedName ?? "MusicSync Mac", type: LAN.service)
+            #if os(macOS)
+            let name = Host.current().localizedName ?? "MusicSync Mac"
+            #else
+            let name = UIDevice.current.name + " · MusicSync"
+            #endif
+            if !directOnly { listener.service = NWListener.Service(name: name, type: LAN.service) }
             listener.newConnectionHandler = { [weak self] connection in MainActor.assumeIsolated { self?.accept(connection)  } }
             listener.stateUpdateHandler = { [weak self, weak listener] state in MainActor.assumeIsolated {
                 guard let self else { return }
                 switch state {
                 case .ready:
                     self.active = true; self.status = tr("Host available on LAN")
+                    #if os(macOS)
                     if let name = SCDynamicStoreCopyLocalHostName(nil) as String?, let port = listener?.port {
                         self.connectionAddress = "\(name).local:\(port.rawValue)"
                     }
+                    #else
+                    if let port = listener?.port, let address = LocalAddress.wifi {
+                        self.connectionAddress = "\(address):\(port.rawValue)"
+                    }
+                    #endif
                 case .failed(let error): self.error = error.localizedDescription; self.stopHost()
                 default: break
                 }
@@ -118,29 +144,56 @@ struct ConnectedDevice: Identifiable {
         error = nil; delay = DelayController(); latency = delay.target
         sequence = 0; epoch += 1; nextPTS = nil
         do {
-            if mode == 0 || testTone { try player.start() }
+            #if os(macOS)
+            if mode == 0 || testTone || fileURL != nil { try player.start() }
+            #else
+            try player.start()
+            #endif
             if testTone {
+                phase = 0
                 streaming = true; status = tr("Synchronized test tone")
                 toneTimer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.tone()  } }
+                if let toneTimer { RunLoop.main.add(toneTimer, forMode: .common) }
             } else {
+                let sourceEpoch = epoch
                 let source: AudioCapture
+                if let url = fileURL {
+                    let file = FileAudioSource(url: url)
+                    file.onEnd = { [weak self] failure in DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                        guard let self, self.epoch == sourceEpoch, self.streaming else { return }
+                        if let failure { self.error = failure }
+                        Task { await self.stopStreaming() }
+                    } }
+                    source = file
+                } else {
+                #if os(macOS)
                 if mode == 0 { source = TapCapture() } else {
                     let screen = ScreenCapture()
                     screen.onError = { [weak self] text in DispatchQueue.main.async {
-                        self?.error = text; Task { await self?.stopStreaming() }
+                        guard let self, self.epoch == sourceEpoch else { return }
+                        self.error = text; Task { await self.stopStreaming() }
                     } }
                     source = screen
                 }
+                #else
+                throw AudioSourceFailure.noFile
+                #endif
+                }
                 capture = source
                 source.onPCM = { [weak self] data, frames, time in
-                    DispatchQueue.main.async { self?.broadcast(data, frames: frames, captureTime: time) }
+                    DispatchQueue.main.async {
+                        guard let self, self.epoch == sourceEpoch else { return }
+                        self.broadcast(data, frames: frames, captureTime: time)
+                    }
                 }
-                try await source.start()
                 streaming = true
-                status = mode == 0 ? tr("Synchronized system audio") : tr("ScreenCaptureKit monitor • original Mac output is ahead")
+                try await source.start()
+                guard active, capture === source else { await source.stop(); streaming = false; return }
+                status = fileURL != nil ? tr("Streaming music file") : mode == 0 ? tr("Synchronized system audio") : tr("ScreenCaptureKit monitor • original Mac output is ahead")
             }
         } catch {
             self.error = error.localizedDescription
+            streaming = false
             await capture?.stop(); capture = nil; player.stop()
         }
     }
@@ -157,7 +210,13 @@ struct ConnectedDevice: Identifiable {
             // A short pulse each second makes acoustic alignment easy to hear.
             let seconds = phase / 48_000
             let value = seconds.truncatingRemainder(dividingBy: 1) < 0.1 ? Float(sin(phase * 2 * .pi * 880 / 48_000)) * 0.12 : 0
-            samples[frame * 2] = value; samples[frame * 2 + 1] = value; phase += 1
+            var left = value, right = value
+            let pulse = seconds.truncatingRemainder(dividingBy: 1)
+            if layout != .stereo {
+                if (0.25..<0.35).contains(pulse) { left = Float(sin(phase * 2 * .pi * 440 / 48_000)) * 0.12 }
+                if (0.5..<0.6).contains(pulse) { right = Float(sin(phase * 2 * .pi * 660 / 48_000)) * 0.12 }
+            }
+            samples[frame * 2] = left; samples[frame * 2 + 1] = right; phase += 1
         }
         let data = samples.withUnsafeBytes { Data($0) }
         broadcast(data, frames: 480, captureTime: SyncClock.now)
@@ -177,8 +236,10 @@ struct ConnectedDevice: Identifiable {
             message.sequence = sequence; sequence += 1; message.epoch = epoch
             message.pts = nextPTS; message.sampleRate = 48_000; message.channels = 2; message.frames = count
             message.latency = delay.target
+            message.outputChannel = layout.remoteChannel.rawValue
             message.payload = data.subdata(in: (cursor * 8)..<((cursor + count) * 8))
             nextPTS! += Double(count) / 48_000; cursor += count
+            player.calibration = calibrationMS / 1000
             if player.running { _ = player.schedule(message, offset: 0) }
             for device in devices where device.ready { peers[device.id]?.send(message) }
         }

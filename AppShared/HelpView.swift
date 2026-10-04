@@ -4,6 +4,15 @@ struct HelpView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("iPhone as Host") {
+                    Text("Open Host on iPhone, choose a music file or import a downloaded DRM-free song from Music Library, then start Host. On another iPhone or Mac, open Listen, connect, and wait for clock synchronization. Start Streaming on the Host. Each start plays the chosen file from the beginning.")
+                    Text("Apple Music subscription audio is DRM protected and cannot be exported into the MusicSync PCM stream. The picker hides protected and cloud-only items. Download your own DRM-free music first, or import an audio file from Files.")
+                    Text("For LiveContainer hosting, enable Direct connection only before starting Host if Bonjour advertising is blocked. Copy the iPhone Host address into the other device. Local Network access is still required; container permissions can also affect music library import.")
+                }
+                Section("Stereo pair") {
+                    Text("In stereo pair mode, Test Tone plays a shared alignment pulse, then a lower left-only tone, then a higher right-only tone each second.")
+                    Text("Choose Host left · Client right or Host right · Client left in Speaker layout before streaming. Place the devices on their assigned sides. Client Follow Host applies that assignment automatically. With multiple Clients, choose each output channel manually. Mono source files cannot create a true stereo image.")
+                }
                 Section("Getting started") {
                     Text("Connect Mac and iPhone to the same Wi-Fi. On Mac, start Host. On iPhone, find nearby Macs and choose your Mac. Wait for clock synchronization, then start streaming on Mac.")
                 }

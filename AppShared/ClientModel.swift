@@ -22,6 +22,8 @@ struct NearbyMac: Identifiable {
     @Published var uncertainty = 0.0
     @Published var dropped = 0
     @Published var calibrationMS = 0.0
+    @Published var channelOverride = ChannelSelection.automatic
+    @Published var hostChannel = OutputChannel.stereo
     @Published var directAddress = ""
     @Published var discoveryDenied = false
     private var directMac: NearbyMac?
@@ -46,6 +48,7 @@ struct NearbyMac: Identifiable {
     private var receivedLatency = 0.18
     private var playbackDrops = 0
     init() {
+        #if os(iOS)
         routeObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.restartAudio()  } }
         interruptionObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] notification in MainActor.assumeIsolated {
             guard let type = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt else { return }
@@ -53,6 +56,9 @@ struct NearbyMac: Identifiable {
                 self?.player.stop(); self?.buffer = JitterQueue(); self?.status = tr("Audio interrupted")
             } else { self?.restartAudio() }
          } }
+        #else
+        routeObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.restartAudio() } }
+        #endif
     }
     func search() {
         guard browser == nil else { return }
@@ -78,7 +84,7 @@ struct NearbyMac: Identifiable {
             default: break
             }
          } }
-        self.browser = browser; browser.start(queue: .main); status = tr("Searching nearby Macs…")
+        self.browser = browser; browser.start(queue: .main); status = tr("Searching nearby Hosts…")
     }
     private func discoveryFailed(_ failure: NWError) {
         searching = false; status = tr("Discovery unavailable")
@@ -95,7 +101,7 @@ struct NearbyMac: Identifiable {
               components.path.isEmpty, components.query == nil, components.fragment == nil,
               let port = components.port, (1...65535).contains(port),
               let nwPort = NWEndpoint.Port(rawValue: UInt16(port)) else {
-            error = tr("Paste the Mac connection address, for example MacBook.local:49152."); return
+            error = tr("Paste the Host connection address, for example MacBook.local:49152 or 192.168.1.20:49152."); return
         }
         disconnect()
         let mac = NearbyMac(name: value, endpoint: .hostPort(host: NWEndpoint.Host(hostname), port: nwPort))
@@ -119,7 +125,13 @@ struct NearbyMac: Identifiable {
             case .ready:
                 do { try self.player.start() } catch { self.error = error.localizedDescription; self.disconnect(); return }
                 self.connected = true; self.status = tr("Synchronizing clocks…")
-                var hello = Message("hello"); hello.name = UIDevice.current.name; peer.send(hello)
+                var hello = Message("hello")
+                #if os(iOS)
+                hello.name = UIDevice.current.name
+                #else
+                hello.name = Host.current().localizedName ?? "MusicSync Mac"
+                #endif
+                peer.send(hello)
                 self.startTimers()
             case .failed(let error): self.error = error.localizedDescription; self.lost()
             case .cancelled: self.lost()
@@ -182,6 +194,8 @@ struct NearbyMac: Identifiable {
         let before = buffer.drops
         let lead = max(0.025, player.outputLatency + abs(player.calibration) + 0.01)
         for packet in buffer.take(now:now, offset:clock.offset, horizon:max(0.130,lead + 0.04), minimumLead:lead) {
+            if let raw = packet.outputChannel, let channel = OutputChannel(rawValue: raw), hostChannel != channel { hostChannel = channel }
+            player.channel = channelOverride.channel ?? hostChannel
             if !player.schedule(packet, offset:clock.offset) { playbackDrops += 1 }
         }
         if buffer.drops > before { requestedLatency = min(0.5, latency + 0.02) }
@@ -196,6 +210,9 @@ struct NearbyMac: Identifiable {
         guard connected else { return }
         player.stop(); buffer = JitterQueue()
         do { try player.start() } catch { self.error = error.localizedDescription }
+    }
+    func stopDiscovery() {
+        browser?.cancel(); browser = nil; searching = false; nearby.removeAll()
     }
     func disconnect() {
         wantConnection = false; retry?.cancel(); retry = nil

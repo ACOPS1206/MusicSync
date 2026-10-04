@@ -9,6 +9,7 @@ final class PCMPlayer {
     private(set) var running = false
     private var timeline = PlaybackTimeline()
     var calibration = 0.0
+    var channel = OutputChannel.stereo
     var outputLatency: Double {
         #if os(iOS)
         return AVAudioSession.sharedInstance().outputLatency + AVAudioSession.sharedInstance().ioBufferDuration
@@ -37,7 +38,8 @@ final class PCMPlayer {
         data.withUnsafeBytes { bytes in
             for f in 0..<frames {
                 for c in 0..<2 {
-                    let raw = bytes.loadUnaligned(fromByteOffset: (f * 2 + c) * 4, as: UInt32.self)
+                    let sourceChannel = channel.sourceIndex(forOutput: c)
+                    let raw = bytes.loadUnaligned(fromByteOffset: (f * 2 + sourceChannel) * 4, as: UInt32.self)
                     let value = Float(bitPattern: UInt32(littleEndian: raw))
                     channels[c][f] = value.isFinite ? max(-1, min(1, value)) : 0
                 }

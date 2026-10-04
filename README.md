@@ -1,6 +1,6 @@
 # MusicSync
 
-MusicSync streams Mac system audio directly to an iPhone on the same LAN and schedules both speakers against one presentation timeline. Swift / SwiftUI, Apple frameworks only, no cloud, no audio driver installation. Requires **macOS 26.0+ and iOS 26.0+**. The committed Xcode project opens directly; CI builds with Xcode 26.6 to catch accidental newer API use.
+MusicSync streams Mac system audio or music files hosted on iPhone to nearby Macs and iPhones, scheduling all speakers against one presentation timeline. Each app has Host and Listen tabs, with optional left/right stereo pairing. Swift / SwiftUI, Apple frameworks only, no cloud, no audio driver installation. Requires **macOS 26.0+ and iOS 26.0+**. The committed Xcode project opens directly; CI builds with Xcode 26.6 to catch accidental newer API use.
 
 This is a functional first implementation, not a claim of measured ±3 ms acoustic synchronization. Compilation and protocol tests can be automated; permissions, process muting, physical speaker latency and long-run clock drift must also be tested on real devices.
 
@@ -8,11 +8,22 @@ This is a functional first implementation, not a claim of measured ±3 ms acoust
 
 - `MusicSync.xcodeproj`: shared `MusicSyncMac` and `MusicSynciOS` schemes.
 - `Shared/MusicSyncCore`: local Swift package; versioned framing, Network.framework peer transport, monotonic clock estimation, adaptive delay, bounded jitter queue and XCTest tests (including real loopback TCP ping/PCM transport).
-- `macOS/MusicSyncMac`: Host, CoreAudio process tap and ScreenCaptureKit alternative.
-- `iOS/MusicSynciOS`: Bonjour browsing, receiver, reconnection, clock probes and jitter buffer.
-- `AppShared/PCMPlayer.swift`: AVAudioEngine / AVAudioPlayerNode scheduled playback.
+- `macOS/MusicSyncMac`: Mac entry point, CoreAudio process tap and ScreenCaptureKit alternative.
+- `iOS/MusicSynciOS`: iPhone entry point and native music library picker / import.
+- `AppShared`: shared Host and Client models/views, Bonjour browsing, file decoder, stereo assignment, reconnection, scheduled AVAudioEngine output and bilingual Help.
 - `scripts`: reproducible project generator, builds, artifact validation and packaging.
 - `.github/workflows/build.yml`: tests and both application builds on push, PR and workflow_dispatch.
+
+## iPhone hosting and stereo pair (v0.3)
+
+1. On iPhone open **Host**, then **Choose Music File** (Files / iCloud Drive) or **Import from Music Library**. Import creates a temporary local copy; one song is decoded incrementally, converted to 48 kHz stereo PCM and sent through the same clock/timestamp pipeline as Mac capture. Each Start Streaming restarts the file; pause, seeking and playlists are not implemented yet.
+2. Library access requires Media & Apple Music permission. Only downloaded **DRM-free** library items with an accessible asset URL can be exported with AVFoundation. The picker hides protected and cloud-only songs. **Apple Music subscription streams/downloads cannot be captured or converted to transferable PCM.** This feature imports compatible music from the system Music library; it does not stream the Apple Music catalog or bypass DRM. Unsupported selections show an explanation. MusicKit playback does not expose a transferable decoded PCM source for this pipeline.
+3. Start Host, then connect from **Listen** on another iPhone **or Mac**. Wait for clock sync, then Start Streaming. Role changes stop the previous role to avoid simultaneous competing audio engines. Mac system capture still requires Mac Host; iPhone Host only sends the selected music file or test tone, never another app's system audio.
+4. For a stereo pair choose **Host left · Client right** or the reverse before streaming. The Host plays one original channel through both of its physical speaker channels; the Client plays the opposite channel. **Follow Host** is the default client assignment. Multiple Clients get the same remote assignment unless their own channel picker overrides it. Mono sources remain mono. In pair mode Test Tone plays a common alignment pulse, followed by a lower left-only pulse and a higher right-only pulse each second. Physical spacing, orientation and unequal speaker response affect the stereo image; this is not AirPlay/HomePod pairing.
+5. Both outputs use the same presentation timestamps, shared adaptive delay and output latency compensation. Host and Client each have ±30 ms residual timing trim. Changing the layout requires stopping streaming; Client overrides affect newly scheduled buffers (up to the current scheduling horizon).
+6. In LiveContainer, Bonjour advertising can be blocked as well as browsing. Enable **Direct connection only (LiveContainer)** before starting iPhone Host; no Bonjour registration is attempted, and the UI displays the Wi-Fi IPv4 address and TCP port for direct connection. The other device pastes that address. Discovery resumes when this option is off and the host container permits the service. Addresses can change with network changes. Media library access depends on the host container's permissions; Files import remains available.
+
+The wire payload is always interleaved Float32 stereo. New optional `outputChannel` metadata (`stereo`, `left`, `right`) selects Client playback without discarding the opposite channel in transport. Old peers ignore it and continue mirrored stereo. Total delay starts at 180 ms and can rise to 500 ms for unstable networks; no new physical synchronization accuracy is claimed.
 
 ## Capture modes — why two?
 
@@ -39,7 +50,7 @@ flowchart TD
 
 1. Install both applications. Connect Mac and iPhone to the same trusted Wi-Fi/LAN. Disable Wi-Fi client isolation, and permit MusicSync through the Mac firewall if prompted.
 2. Choose Mac built-in speakers; keep iPhone on its speaker rather than Bluetooth/AirPlay/headphones.
-3. On Mac, **Start Host**. On iPhone, **Find Nearby Macs**, allow Local Network permission, then select the advertised Mac. No IP entry is needed.
+3. On Mac, **Start Host**. On iPhone, **Find Nearby Hosts**, allow Local Network permission, then select the advertised Mac. No IP entry is needed.
 4. Wait for clock synchronization (at least eight valid samples, roughly a second). Choose **Test Tone** first: short pulses play against the shared timeline on both devices.
 5. Choose **Start Streaming** on Mac and grant System Audio Recording permission. Play ordinary browser/local music. Source apps are muted only during synchronized tap reading and their audio is replayed with a delay.
 6. Use iPhone timing trim (−30…+30 ms) to calibrate residual output latency. Positive trim makes iPhone later. Stop streaming to restore ordinary playback.
@@ -117,7 +128,7 @@ LiveContainer runs guests inside its own process. iOS may validate Bonjour servi
 
 For this case, enable Local Network for LiveContainer in iOS Settings. Start the Mac Host, choose **Copy Connection Address**, and paste the `MacName.local:port` address into the iPhone **Direct connection / LiveContainer** section. This uses a normal TCP connection without browsing the custom service type; Local Network authorization is still required. It preserves the same clock sync, audio protocol and automatic reconnection. The address/port may change when the Host restarts. If .local hostname resolution is filtered by your LAN, direct connection cannot resolve that name. Ordinary signed installation of MusicSync remains the preferred setup for its own permission declarations and background audio lifecycle. A LiveContainer build with `_musicsync._tcp` added to its host NSBonjourServices is another option.
 
-Discovery failures now show guidance and release the failed browser so **Find Nearby Macs** can retry after permission changes. Physical LiveContainer playback and background behavior still need device testing. Reference: https://github.com/LiveContainer/LiveContainer/issues/1519
+Discovery failures now show guidance and release the failed browser so **Find Nearby Hosts** can retry after permission changes. Physical LiveContainer playback and background behavior still need device testing. Reference: https://github.com/LiveContainer/LiveContainer/issues/1519
 
 
 ## v0.2 — Help, Korean and smoother playback
