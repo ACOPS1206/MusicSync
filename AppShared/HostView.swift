@@ -67,7 +67,7 @@ struct HostView: View {
                     #endif
                     Picker("Speaker layout", selection: $model.layout) {
                         ForEach(SpeakerLayout.allCases) { layout in Text(layout.title).tag(layout) }
-                    }.disabled(model.streaming)
+                    }.disabled(model.streaming || model.mode == 1)
                     Text("Place Host on the selected side and the Client on the other. Both channels are sent; each device plays its assigned channel through its speakers.").font(.caption).foregroundStyle(.secondary)
                     LabeledContent("Host timing trim", value: String(format: "%+.0f ms", model.calibrationMS))
                     Slider(value: $model.calibrationMS, in: -30...30, step: 1)

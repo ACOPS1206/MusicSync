@@ -28,7 +28,7 @@ struct ConnectedDevice: Identifiable {
     @Published var error: String?
     @Published var devices: [ConnectedDevice] = []
     @Published var latency = 0.18
-    @Published var mode = 0
+    @Published var mode = 0 { didSet { if mode == 1 { layout = .stereo } } }
     @Published var fileURL: URL?
     @Published var fileName = ""
     @Published var layout = SpeakerLayout.stereo { didSet { player.channel = layout.localChannel } }
