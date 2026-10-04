@@ -195,6 +195,7 @@ struct NearbyMac: Identifiable {
         } else if message.kind == "stop" {
             player.stop(); try? player.start(); buffer = JitterQueue(); lastAudio = 0
             status = tr("Connected • Host stopped streaming"); sessionPhase = "Waiting"; health = SyncHealthMonitor(); syncIssues = []
+            monitorMode = false; peakScheduleError = 0; bufferCount = 0; bufferAheadMS = 0; schedulingErrorMS = 0
         }
     }
     private func startTimers() {
