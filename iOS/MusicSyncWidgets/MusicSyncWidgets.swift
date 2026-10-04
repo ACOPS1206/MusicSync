@@ -16,6 +16,7 @@ struct MusicSyncLiveActivity: Widget {
                     Spacer(); Text(tr(context.attributes.role))
                 }.font(.headline)
                 if context.attributes.peerName != "MusicSync" { Text(context.attributes.peerName).font(.caption).lineLimit(1) }
+                Text(outputDescription(context.state)).font(.caption).lineLimit(1).minimumScaleFactor(0.7)
                 timing(context.state)
                 if context.state.warning { Text("Sync warning • check the app").font(.caption).foregroundStyle(.orange) }
             }.padding().activityBackgroundTint(.black.opacity(0.85)).activitySystemActionForegroundColor(.white).foregroundStyle(.white)
@@ -28,19 +29,51 @@ struct MusicSyncLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.center) { Text(tr(context.attributes.role)).font(.caption) }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment:.leading,spacing:6) {
+                        Text(outputDescription(context.state)).font(.caption).lineLimit(1).minimumScaleFactor(0.7)
                         timing(context.state)
                         if context.state.warning { Text("Sync warning • check the app").font(.caption).foregroundStyle(.orange) }
                     }
                 }
             } compactLeading: {
-                Image(systemName:context.state.warning ? "exclamationmark.triangle.fill" : "waveform").foregroundStyle(context.state.warning ? .orange : .primary)
+                HStack(spacing:3) {
+                    Image(systemName:context.state.warning ? "exclamationmark.triangle.fill" : "waveform").foregroundStyle(context.state.warning ? .orange : .primary)
+                    Text(channelMark(context.state)).font(.caption2.bold())
+                }.accessibilityLabel(outputDescription(context.state))
             } compactTrailing: {
                 Text(String(format:"%d ms",context.state.latencyMS)).font(.caption2).monospacedDigit()
             } minimal: {
-                Image(systemName:context.state.warning ? "exclamationmark.triangle.fill" : "waveform").foregroundStyle(context.state.warning ? .orange : .primary)
+                if context.state.warning { Image(systemName:"exclamationmark.triangle.fill").foregroundStyle(.orange) }
+                else { Text(channelMark(context.state)).font(.caption2.bold()).accessibilityLabel(outputDescription(context.state)) }
             }
             .keylineTint(context.state.warning ? .orange : .accentColor)
         }
+    }
+    private func channelMark(_ state: MusicSyncActivityAttributes.ContentState) -> String {
+        switch state.outputChannel {
+        case "left": return tr("L")
+        case "right": return tr("R")
+        case "stereo": return tr("ST")
+        default: return "—"
+        }
+    }
+    private func outputDescription(_ state: MusicSyncActivityAttributes.ContentState) -> String {
+        if let layout = state.speakerLayout {
+            let title: String
+            switch layout {
+            case "hostLeft": title = tr("Host left · Client right")
+            case "hostRight": title = tr("Host right · Client left")
+            default: title = tr("Stereo on each device")
+            }
+            return String(format:tr("Host preset: %@"),title)
+        }
+        let title: String
+        switch state.outputChannel {
+        case "left": title = tr("Left channel")
+        case "right": title = tr("Right channel")
+        case "stereo": title = tr("Stereo")
+        default: return tr("Output channel") + ": —"
+        }
+        return String(format:tr(state.followsHost == true ? "Follow Host · %@" : "Output · %@"),title)
     }
     private func timing(_ state: MusicSyncActivityAttributes.ContentState) -> some View {
         VStack(alignment: .leading, spacing: 2) {

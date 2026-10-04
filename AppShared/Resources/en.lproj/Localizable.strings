@@ -257,3 +257,61 @@
 "Security verification failed" = "Security verification failed";
 "Connect to a Host, compare all eight digits on both screens, confirm Codes Match on the Client, then approve on the Host within 60 seconds. Both devices need MusicSync 0.6 or later. A changed Host security key stops reconnect until you verify the Host and explicitly forget the old pairing." = "Connect to a Host, compare all eight digits on both screens, confirm Codes Match on the Client, then approve on the Host within 60 seconds. Both devices need MusicSync 0.6 or later. A changed Host security key stops reconnect until you verify the Host and explicitly forget the old pairing.";
 "TLS 1.3 encrypts initial pairing, audio, clock messages and device controls. The comparison code is computed independently from each TLS connection. After approval the Client pins the Host public key. Bonjour names and addresses remain visible. If Keychain saving is unavailable, encryption still works for this session; restart may require reapproval or forgetting a changed Host key." = "TLS 1.3 encrypts initial pairing, audio, clock messages and device controls. The comparison code is computed independently from each TLS connection. After approval the Client pins the Host public key. Bonjour names and addresses remain visible. If Keychain saving is unavailable, encryption still works for this session; restart may require reapproval or forgetting a changed Host key.";
+
+/* TLS bootstrap diagnostics */
+"Connection ended before pairing: %@" = "Connection ended before pairing: %@";
+"Pairing stopped after %d failed connections. %@. Update both devices and try connecting again." = "Pairing stopped after %d failed connections. %@. Update both devices and try connecting again.";
+"Pairing connection failed" = "Pairing connection failed";
+"The remote device closed the connection" = "The remote device closed the connection";
+"Sync warning detection starts in %.0f seconds" = "Sync warning detection starts in %.0f seconds";
+"App version" = "App version";
+
+/* Live Activity stereo preset and actual output */
+"L" = "L";
+"R" = "R";
+"ST" = "ST";
+"Host preset: %@" = "Host preset: %@";
+"Follow Host · %@" = "Follow Host · %@";
+"Output · %@" = "Output · %@";
+
+"Volume" = "Volume";
+
+"Client volume" = "Client volume";
+
+"Host volume" = "Host volume";
+
+"This device volume" = "This device volume";
+
+"Volume permissions" = "Volume permissions";
+
+"Client may change Host volume" = "Client may change Host volume";
+
+"Host may change Client volume" = "Host may change Client volume";
+
+"Client may change other Clients" = "Client may change other Clients";
+
+"Other Clients may change this Client" = "Other Clients may change this Client";
+
+"Client-to-Client control needs permission on both the controlling and receiving devices." = "Client-to-Client control needs permission on both the controlling and receiving devices.";
+
+"Update both devices to use remote volume control." = "Update both devices to use remote volume control.";
+
+"Ask the Host to allow volume control." = "Ask the Host to allow volume control.";
+
+"These sliders adjust MusicSync playback only. System volume remains controlled by the device buttons or system settings." = "These sliders adjust MusicSync playback only. System volume remains controlled by the device buttons or system settings.";
+
+"The volume change was denied or not confirmed. Check permissions on the Host." = "The volume change was denied or not confirmed. Check permissions on the Host.";
+
+"The Host denied the volume change. Ask the Host to grant permission." = "The Host denied the volume change. Ask the Host to grant permission.";
+
+"The Client declined the volume change." = "The Client declined the volume change.";
+
+"The Host did not confirm the volume change." = "The Host did not confirm the volume change.";
+
+"The Client did not confirm the volume change." = "The Client did not confirm the volume change.";
+
+"Volume & permissions" = "Volume & permissions";
+
+"The Host manages permissions for each paired Client. Host-to-Client volume control is enabled by default; Client-to-Host and Client-to-Client control are disabled by default. To let one Client adjust another, allow control on the sender and reception on the target. Revoking permission blocks new requests immediately. Your own local volume is always adjustable." = "The Host manages permissions for each paired Client. Host-to-Client volume control is enabled by default; Client-to-Host and Client-to-Client control are disabled by default. To let one Client adjust another, allow control on the sender and reception on the target. Revoking permission blocks new requests immediately. Your own local volume is always adjustable.";
+
+"Clock uncertainty above 60 ms must persist for 5 seconds. Scheduling error above 25 ms, drops above 10 packets/s, clock age above 5 seconds or audio age above 2 seconds must persist for 3 seconds. Each risk is tracked independently. Warnings clear after 3 seconds below a lower recovery threshold. Monitor mode is reported after the initial 30-second warning warmup." = "Clock uncertainty above 60 ms must persist for 5 seconds. Scheduling error above 25 ms, drops above 10 packets/s, clock age above 5 seconds or audio age above 2 seconds must persist for 3 seconds. Each risk is tracked independently. Warnings clear after 3 seconds below a lower recovery threshold. Monitor mode is reported after the initial 30-second warning warmup.";

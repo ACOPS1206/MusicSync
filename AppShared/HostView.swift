@@ -39,9 +39,6 @@ struct HostView: View {
                         }.buttonStyle(.glass)
                     }
                 }
-                SyncWarningView(issues:model.syncIssues,input:model.healthInput,rtt:model.timingDevice?.rtt ?? 0,jitter:model.timingDevice?.jitter ?? 0,remoteIssues:Array(Set(model.devices.flatMap(\.syncIssues))))
-                if model.active { RealtimeStatusView(phase:model.sessionPhase,traffic:model.traffic,drops:model.localDrops,schedulingErrorMS:model.schedulingErrorMS,updated:model.lastUpdated,timing:TimingSummaryView(latency:model.latency,rtt:model.timingDevice?.rtt ?? 0,offset:model.timingDevice?.offset ?? 0,jitter:model.timingDevice?.jitter ?? 0,uncertainty:model.healthInput.uncertainty,drops:model.localDrops,peerName:model.timingDevice?.name)) }
-                LiveActivitySettingsView()
                 if model.devices.contains(where: { !$0.gate.approved }) {
                     Section("Pairing requests") {
                         Text("Compare all eight digits on both devices. The Client must confirm the match before you approve. Unapproved devices receive no audio.").font(.caption).foregroundStyle(.secondary)
@@ -67,6 +64,7 @@ struct HostView: View {
                             Label(device.name,systemImage:"iphone")
                             Label("TLS 1.3 encrypted",systemImage:"lock.shield").font(.caption)
                             Text(device.ready ? tr("Clock synchronized") : tr("Synchronizing…")).foregroundStyle(.secondary)
+                            DeviceVolumeView(model:model,device:device)
                             LabeledContent("Current output channel",value:device.effectiveChannel.title)
                             if model.streaming && device.ready { Text(tr(device.playbackState)).foregroundStyle(.secondary) }
                             Picker("Output channel",selection:Binding(
@@ -81,7 +79,7 @@ struct HostView: View {
                                 Button("Remove Pairing",role:.destructive) { model.forgetDevice(device.id) }.buttonStyle(.glass)
                             }
                             if device.identifyingUntil > Date() { Label("Playing identification tone",systemImage:"speaker.wave.3.fill").foregroundStyle(.secondary) }
-                            if !device.syncIssues.isEmpty { Label("Client reports sync risk",systemImage:"exclamationmark.triangle.fill").foregroundStyle(.orange) }
+                            if model.syncWarmupRemaining <= 0 && !device.syncIssues.isEmpty { Label("Client reports sync risk",systemImage:"exclamationmark.triangle.fill").foregroundStyle(.orange) }
                             if device.ready {
                                 Text(String(format:tr("RTT %.1f ms · Clock %+.1f ms"),device.rtt * 1000,device.offset * 1000)).monospacedDigit()
                                 Text(String(format:tr("Clock uncertainty ≥ %.1f ms"),(device.rtt / 2 + device.jitter) * 1000)).font(.caption)
@@ -93,6 +91,8 @@ struct HostView: View {
                 }
                 if let notice = model.pairingNotice { Section("Pairing storage") { Text(notice).font(.caption).foregroundStyle(.secondary) } }
                 Section("Audio") {
+                    PlaybackVolumeView(title:"Host volume",volume:$model.outputVolume)
+                    Text("These sliders adjust MusicSync playback only. System volume remains controlled by the device buttons or system settings.").font(.caption).foregroundStyle(.secondary)
                     #if os(macOS)
                     Picker("Capture",selection:$model.mode) {
                         Text("Synchronized • CoreAudio tap").tag(0)
@@ -130,6 +130,12 @@ struct HostView: View {
                         }
                     }.disabled(!model.active || model.busy)
                 }
+                if model.streaming, model.syncWarmupRemaining > 0 {
+                    Label(String(format:tr("Sync warning detection starts in %.0f seconds"),ceil(model.syncWarmupRemaining)),systemImage:"hourglass").font(.caption).foregroundStyle(.secondary)
+                }
+                SyncWarningView(issues:model.syncIssues,input:model.healthInput,rtt:model.timingDevice?.rtt ?? 0,jitter:model.timingDevice?.jitter ?? 0,remoteIssues:model.syncWarmupRemaining > 0 ? [] : Array(Set(model.devices.flatMap(\.syncIssues))))
+                if model.active { RealtimeStatusView(phase:model.sessionPhase,traffic:model.traffic,drops:model.localDrops,schedulingErrorMS:model.schedulingErrorMS,updated:model.lastUpdated,timing:TimingSummaryView(latency:model.latency,rtt:model.timingDevice?.rtt ?? 0,offset:model.timingDevice?.offset ?? 0,jitter:model.timingDevice?.jitter ?? 0,uncertainty:model.healthInput.uncertainty,drops:model.localDrops,peerName:model.timingDevice?.name)) }
+                LiveActivitySettingsView()
                 #if os(macOS)
                 Section("Permissions & output") {
                     Text("Local Network discovers and streams to your iPhone. Synchronized mode needs System Audio Recording; monitor mode needs Screen & System Audio Recording. No microphone is used.")

@@ -51,7 +51,7 @@ struct LiveSessionSnapshot: Equatable {
             } catch { availability = String(format:tr("Live Activity unavailable: %@"),error.localizedDescription) }
             return
         }
-        let significant = lastState?.phase != snapshot.state.phase || lastState?.warning != snapshot.state.warning || lastState?.deviceCount != snapshot.state.deviceCount
+        let significant = lastState?.phase != snapshot.state.phase || lastState?.warning != snapshot.state.warning || lastState?.deviceCount != snapshot.state.deviceCount || lastState?.outputChannel != snapshot.state.outputChannel || lastState?.speakerLayout != snapshot.state.speakerLayout || lastState?.followsHost != snapshot.state.followsHost
         guard Date().timeIntervalSince(lastUpdate) >= (significant ? 1 : 5), let activity else { return }
         lastUpdate = Date(); lastState = snapshot.state
         updateTask?.cancel()
@@ -70,13 +70,13 @@ struct LiveSessionSnapshot: Equatable {
 }
 extension ClientModel {
     var liveSnapshot: LiveSessionSnapshot {
-        LiveSessionSnapshot(role:"Listen",peerName:selectedName ?? "MusicSync",sessionID:sessionID.uuidString,active:selectedName != nil && sessionPhase != "Stopped",state:.init(phase:sessionPhase,latencyMS:Int(latency * 1000),rttMS:Int(rtt * 1000),uncertaintyMS:Int(uncertainty * 1000),deviceCount:connected ? 1 : 0,dropped:dropped,warning:!syncIssues.isEmpty,offsetMS:offset * 1000,jitterMS:jitter * 1000))
+        LiveSessionSnapshot(role:"Listen",peerName:selectedName ?? "MusicSync",sessionID:sessionID.uuidString,active:selectedName != nil && sessionPhase != "Stopped",state:.init(phase:sessionPhase,latencyMS:Int(latency * 1000),rttMS:Int(rtt * 1000),uncertaintyMS:Int(uncertainty * 1000),deviceCount:connected ? 1 : 0,dropped:dropped,warning:!syncIssues.isEmpty,offsetMS:offset * 1000,jitterMS:jitter * 1000,outputChannel:effectiveChannel.rawValue,followsHost:channelOverride == .automatic))
     }
 }
 extension HostModel {
     var liveSnapshot: LiveSessionSnapshot {
         let ready = devices.filter(\.ready)
-        return LiveSessionSnapshot(role:"Host",peerName:"MusicSync",sessionID:sessionID.uuidString,active:active,state:.init(phase:sessionPhase,latencyMS:Int(latency * 1000),rttMS:Int((timingDevice?.rtt ?? 0) * 1000),uncertaintyMS:Int((ready.map { $0.rtt / 2 + $0.jitter }.max() ?? 0) * 1000),deviceCount:devices.count,dropped:localDrops,warning:!syncIssues.isEmpty,offsetMS:timingDevice.map { $0.offset * 1000 },jitterMS:timingDevice.map { $0.jitter * 1000 }))
+        return LiveSessionSnapshot(role:"Host",peerName:"MusicSync",sessionID:sessionID.uuidString,active:active,state:.init(phase:sessionPhase,latencyMS:Int(latency * 1000),rttMS:Int((timingDevice?.rtt ?? 0) * 1000),uncertaintyMS:Int((ready.map { $0.rtt / 2 + $0.jitter }.max() ?? 0) * 1000),deviceCount:devices.count,dropped:localDrops,warning:!syncIssues.isEmpty,offsetMS:timingDevice.map { $0.offset * 1000 },jitterMS:timingDevice.map { $0.jitter * 1000 },outputChannel:layout.localChannel.rawValue,speakerLayout:layout.rawValue))
     }
 }
 #endif

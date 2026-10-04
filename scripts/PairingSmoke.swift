@@ -17,7 +17,7 @@ struct SmokeFailure: Error { let message: String }
         peer.onMessage = { [weak self] message in self?.messages.append(message) }
         peer.start()
     }
-    func hello() { var message = Message("hello"); message.pairingVersion = 2; message.deviceID = deviceID; message.name = "Pairing CI probe"; message.channelSelection = "automatic"; peer.send(message) }
+    func hello() { var message = Message("hello"); message.pairingVersion = 2; message.deviceID = deviceID; message.name = "Pairing CI probe"; message.channelSelection = "automatic"; message.volumeControlVersion = 1; message.volume = 1; peer.send(message) }
     func stats() { var message = Message("stats"); message.rtt = 0.01; message.offset = 10; message.jitter = 0.002; message.latency = 0.18; message.outputChannel = "stereo"; message.playbackState = "Waiting"; peer.send(message) }
     func last(_ kind: String) -> Message? { messages.last { $0.kind == kind } }
 }
@@ -43,9 +43,11 @@ struct SmokeFailure: Error { let message: String }
         try await wait("first ready") { first.ready }; first.hello()
         try await wait("challenge") { first.last("pairChallenge") != nil }
         let challenge = try unwrap(first.last("pairChallenge"))
+        var premature = Message("setHostVolume"); premature.volume = 0.2; first.peer.send(premature)
         first.stats(); first.peer.send(Message("identifyHost"))
         try await Task.sleep(nanoseconds:100_000_000)
         try require(!host.devices.contains { $0.ready },"Unauthenticated stats must not authorize audio")
+        try require(host.outputVolume == 1 && first.last("volumePeers") == nil,"Unpaired devices must not alter gain or receive roster")
         first.peer.send(Message("pairRequest"))
         try await wait("code") { first.last("pairPending") != nil }
         let firstID = try unwrap(host.devices.first(where: { $0.deviceID == first.deviceID })?.id)
@@ -61,6 +63,23 @@ struct SmokeFailure: Error { let message: String }
         try await wait("approval") { first.last("pairApproved") != nil }
         let secret = try unwrap(first.last("pairApproved")?.pairingSecret)
         first.stats(); try await wait("approved stats") { host.devices.first(where: { $0.id == firstID })?.ready == true }
+        try await verifyHostVolume(host,probe:first,id:firstID,volume:0.2,accepted:false)
+        host.setVolumePermissions(firstID,clientMayControlHost:true)
+        try await verifyHostVolume(host,probe:first,id:firstID,volume:0.35,accepted:true)
+        try require(host.outputVolume == 0.35,"Permitted volume must apply to the Host")
+        try await verifyHostVolume(host,probe:first,id:firstID,volume:2,accepted:false)
+        host.setVolumePermissions(firstID,clientMayControlHost:false)
+        try await verifyHostVolume(host,probe:first,id:firstID,volume:0.9,accepted:false)
+        try require(host.outputVolume == 0.35,"Revocation and invalid gain must leave Host volume unchanged")
+        host.setClientVolume(firstID,volume:0.42)
+        try await wait("volume command") { first.last("setClientVolume") != nil }
+        let volumeCommand = try unwrap(first.last("setClientVolume"))
+        var volumeAck = Message("volumeReport"); volumeAck.volume = 0.42; volumeAck.requestID = volumeCommand.requestID; first.peer.send(volumeAck)
+        try await wait("volume acknowledgment") { host.devices.first(where: { $0.id == firstID })?.volume == 0.42 && host.devices.first(where: { $0.id == firstID })?.pendingVolume == nil }
+        host.setVolumePermissions(firstID,hostMayControlClient:false)
+        let before = first.messages.filter { $0.kind == "setClientVolume" }.count
+        host.setClientVolume(firstID,volume:0.8); try await Task.sleep(nanoseconds:150_000_000)
+        try require(first.messages.filter { $0.kind == "setClientVolume" }.count == before,"Disabled Host permission must block commands")
         host.setChannel(firstID,selection:.right)
         try await wait("channel command") { first.last("setChannel") != nil }
         let command = try unwrap(first.last("setChannel"))
@@ -70,6 +89,32 @@ struct SmokeFailure: Error { let message: String }
         let second = Probe(port:port); defer { second.peer.cancel() }
         try await wait("second ready") { second.ready }; second.hello()
         try await wait("second challenge") { second.last("pairChallenge") != nil }
+        second.peer.send(Message("pairRequest"))
+        try await wait("second pairing") { second.last("pairPending") != nil }
+        let secondID = try unwrap(host.devices.first(where: { $0.deviceID == second.deviceID })?.id)
+        var secondConfirmation = Message("pairConfirm"); secondConfirmation.pairingCode = second.peer.tlsSession?.pairingCode; second.peer.send(secondConfirmation)
+        try await wait("second confirmation") { host.devices.first(where: { $0.id == secondID })?.clientConfirmed == true }
+        host.approveDevice(secondID); try await wait("second approval") { second.last("pairApproved") != nil }
+        var relay = Message("setPeerVolume"); relay.targetPeerID = secondID; relay.volume = 0.25
+        first.peer.send(relay); try await wait("peer denied by default") { first.last("peerVolumeDenied") != nil }
+        try require(second.last("setClientVolume") == nil,"Default permissions must prevent Client-to-Client control")
+        host.setVolumePermissions(firstID,clientMayControlPeers:true)
+        first.peer.send(relay); try await Task.sleep(nanoseconds:150_000_000)
+        try require(second.last("setClientVolume") == nil,"Sender permission alone is insufficient")
+        host.setVolumePermissions(secondID,peersMayControlClient:true)
+        try await wait("permitted roster") { first.last("volumePeers")?.volumePeers?.contains(where: { $0.id == secondID && $0.canControl }) == true }
+        first.peer.send(relay); try await wait("relayed volume") { second.last("setClientVolume") != nil }
+        let forwarded = try unwrap(second.last("setClientVolume"))
+        try require(forwarded.volume == 0.25 && forwarded.targetPeerID == firstID,"Relay must identify origin and target only the selected Client")
+        var relayAck = Message("volumeReport"); relayAck.volume = 0.25; relayAck.requestID = forwarded.requestID; second.peer.send(relayAck)
+        try await wait("acknowledged roster") { first.last("volumePeers")?.volumePeers?.contains(where: { $0.id == secondID && $0.volume == 0.25 }) == true }
+        // Revoke during the 100 ms queue window; no second command may escape.
+        let relayCount = second.messages.filter { $0.kind == "setClientVolume" }.count
+        relay.volume = 0.8; first.peer.send(relay)
+        try await wait("relay queued") { host.devices.first(where: { $0.id == secondID })?.pendingVolume == 0.8 }
+        host.setVolumePermissions(firstID,clientMayControlPeers:false)
+        try await Task.sleep(nanoseconds:150_000_000)
+        try require(second.messages.filter { $0.kind == "setClientVolume" }.count == relayCount,"Permission revocation must cancel a queued relay")
         host.identifyDevice(firstID)
         try await wait("targeted identification") { first.last("identify") != nil }
         try require(second.last("identify") == nil,"Identification must not be broadcast to another device")
@@ -98,7 +143,13 @@ struct SmokeFailure: Error { let message: String }
         revoked.peer.send(invalid)
         try await wait("revoked requires approval") { revoked.last("pairPending") != nil }
         try require(revoked.last("pairApproved") == nil,"Removed pairing must not authenticate")
-        print("Verified real TLS 1.3, exporter code confirmation, Host approval gate, channel acknowledgment, targeted identify, remembered reconnect and revocation.")
+        print("Verified volume authorization, relay and queued revocation; real TLS 1.3, exporter code confirmation, Host approval gate, channel acknowledgment, targeted identify, remembered reconnect and revocation.")
+    }
+    @MainActor static func verifyHostVolume(_ host: HostModel, probe: Probe, id: UUID, volume: Double, accepted: Bool) async throws {
+        let request = UUID().uuidString
+        var command = Message("setHostVolume"); command.volume = volume; command.requestID = request; probe.peer.send(command)
+        try await wait("Host volume result") { probe.messages.contains { $0.kind == "volumeResult" && $0.requestID == request } }
+        try require(probe.messages.last(where: { $0.requestID == request })?.accepted == accepted,"Host must enforce volume permissions and bounds")
     }
     @MainActor static func clientRejectsUnverifiedApproval(wrongCode: Bool) async throws {
         let identity = try TLSIdentity.create()

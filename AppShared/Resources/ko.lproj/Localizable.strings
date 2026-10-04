@@ -257,3 +257,61 @@
 "Security verification failed" = "보안 확인 실패";
 "Connect to a Host, compare all eight digits on both screens, confirm Codes Match on the Client, then approve on the Host within 60 seconds. Both devices need MusicSync 0.6 or later. A changed Host security key stops reconnect until you verify the Host and explicitly forget the old pairing." = "호스트에 연결하고 두 화면의 8자리 전체 코드를 비교하세요. 클라이언트에서 코드 일치 확인, 60초 안에 호스트에서 승인을 누릅니다. 양쪽 모두 MusicSync 0.6 이상이어야 합니다. 호스트 보안 키가 바뀌면 재연결을 중단합니다. 실제 호스트인지 확인한 뒤 기존 페어링을 명시적으로 지우세요.";
 "TLS 1.3 encrypts initial pairing, audio, clock messages and device controls. The comparison code is computed independently from each TLS connection. After approval the Client pins the Host public key. Bonjour names and addresses remain visible. If Keychain saving is unavailable, encryption still works for this session; restart may require reapproval or forgetting a changed Host key." = "TLS 1.3으로 최초 페어링, 오디오, 시계 메시지와 기기 제어를 암호화합니다. 비교 코드는 양쪽 TLS 연결에서 독립적으로 계산합니다. 승인 후 클라이언트가 호스트 공개키를 고정합니다. Bonjour 이름과 주소는 LAN에 보입니다. 키체인 저장이 제한되어도 현재 세션의 암호화는 유지하지만 재실행 후 재승인이나 변경된 호스트 키의 기존 페어링 삭제가 필요할 수 있습니다.";
+
+/* TLS bootstrap diagnostics */
+"Connection ended before pairing: %@" = "페어링 전 연결이 종료되었습니다: %@";
+"Pairing stopped after %d failed connections. %@. Update both devices and try connecting again." = "연결이 %d회 실패하여 페어링을 중단했습니다. %@. 두 기기를 업데이트한 뒤 다시 연결하세요.";
+"Pairing connection failed" = "페어링 연결 실패";
+"The remote device closed the connection" = "상대 기기가 연결을 종료했습니다.";
+"Sync warning detection starts in %.0f seconds" = "%.0f초 후 동기화 경고 감지를 시작합니다";
+"App version" = "앱 버전";
+
+/* Live Activity stereo preset and actual output */
+"L" = "좌";
+"R" = "우";
+"ST" = "ST";
+"Host preset: %@" = "호스트 프리셋: %@";
+"Follow Host · %@" = "호스트 따르기 · %@";
+"Output · %@" = "출력 · %@";
+
+"Volume" = "볼륨";
+
+"Client volume" = "클라이언트 볼륨";
+
+"Host volume" = "호스트 볼륨";
+
+"This device volume" = "이 기기 볼륨";
+
+"Volume permissions" = "볼륨 제어 권한";
+
+"Client may change Host volume" = "클라이언트가 호스트 볼륨 변경 허용";
+
+"Host may change Client volume" = "호스트가 클라이언트 볼륨 변경 허용";
+
+"Client may change other Clients" = "이 클라이언트가 다른 클라이언트 볼륨 변경 허용";
+
+"Other Clients may change this Client" = "다른 클라이언트가 이 기기의 볼륨 변경 허용";
+
+"Client-to-Client control needs permission on both the controlling and receiving devices." = "클라이언트 간 제어에는 조작하는 기기와 조작받는 기기의 권한이 모두 필요합니다.";
+
+"Update both devices to use remote volume control." = "원격 볼륨 제어를 사용하려면 양쪽 기기를 업데이트하세요.";
+
+"Ask the Host to allow volume control." = "호스트에서 볼륨 제어 권한을 허용해 주세요.";
+
+"These sliders adjust MusicSync playback only. System volume remains controlled by the device buttons or system settings." = "슬라이더는 MusicSync가 재생하는 소리의 볼륨만 조절합니다. 시스템 볼륨은 기기의 버튼이나 시스템 설정에서 조절하세요.";
+
+"The volume change was denied or not confirmed. Check permissions on the Host." = "볼륨 변경이 거부되었거나 응답이 없습니다. 호스트에서 권한을 확인하세요.";
+
+"The Host denied the volume change. Ask the Host to grant permission." = "호스트가 볼륨 변경을 거부했습니다. 호스트에서 제어 권한을 허용해 주세요.";
+
+"The Client declined the volume change." = "클라이언트가 볼륨 변경을 거부했습니다.";
+
+"The Host did not confirm the volume change." = "호스트가 볼륨 변경에 응답하지 않았습니다.";
+
+"The Client did not confirm the volume change." = "클라이언트가 볼륨 변경에 응답하지 않았습니다.";
+
+"Volume & permissions" = "볼륨 및 권한";
+
+"The Host manages permissions for each paired Client. Host-to-Client volume control is enabled by default; Client-to-Host and Client-to-Client control are disabled by default. To let one Client adjust another, allow control on the sender and reception on the target. Revoking permission blocks new requests immediately. Your own local volume is always adjustable." = "호스트에서 페어링된 클라이언트별 권한을 관리합니다. 호스트의 클라이언트 볼륨 제어는 기본 허용하고, 클라이언트의 호스트·다른 클라이언트 볼륨 제어는 기본 차단합니다. 클라이언트 간 제어는 조작하는 기기의 제어 권한과 대상 기기의 수신 권한을 모두 켜세요. 권한을 끄면 새 요청을 즉시 차단합니다. 자신의 로컬 볼륨은 항상 조절할 수 있습니다.";
+
+"Clock uncertainty above 60 ms must persist for 5 seconds. Scheduling error above 25 ms, drops above 10 packets/s, clock age above 5 seconds or audio age above 2 seconds must persist for 3 seconds. Each risk is tracked independently. Warnings clear after 3 seconds below a lower recovery threshold. Monitor mode is reported after the initial 30-second warning warmup." = "경고는 처음 30초의 준비 시간이 끝난 뒤 감지합니다. 시계 불확실성 60ms 초과는 5초, 예약 오차 25ms 초과·초당 10개 이상 누락·시계 갱신 5초 초과·오디오 중단 2초 초과는 3초간 지속되어야 합니다. 위험 항목은 독립적으로 추적하며 더 낮은 회복 기준 아래에서 3초간 안정되면 경고를 해제합니다. 모니터 모드도 준비 시간 후 표시합니다.";

@@ -88,6 +88,13 @@ public final class TLSClientTrust: @unchecked Sendable {
 public struct TLSSessionInfo {
     public let pairingCode: String
     public let binding: String
+    /// Never includes exported secret bytes or credentials.
+    public static func diagnostic(_ connection: NWConnection) -> String {
+        guard let metadata = connection.metadata(definition:NWProtocolTLS.definition) as? NWProtocolTLS.Metadata else { return "stage=metadata-unavailable" }
+        let version = sec_protocol_metadata_get_negotiated_tls_protocol_version(metadata.securityProtocolMetadata)
+        let cipher = sec_protocol_metadata_get_negotiated_tls_ciphersuite(metadata.securityProtocolMetadata)
+        return "stage=TLS-exporter-unavailable; version=\(version); cipher=\(cipher)"
+    }
     public static func read(_ connection: NWConnection) -> TLSSessionInfo? {
         guard let metadata = connection.metadata(definition:NWProtocolTLS.definition) as? NWProtocolTLS.Metadata,
               sec_protocol_metadata_get_negotiated_tls_protocol_version(metadata.securityProtocolMetadata) == .TLSv13 else { return nil }

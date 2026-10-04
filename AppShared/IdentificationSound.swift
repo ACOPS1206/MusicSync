@@ -7,6 +7,10 @@ import Foundation
 @MainActor final class IdentificationSound {
     private let engine = AVAudioEngine()
     private let node = AVAudioPlayerNode()
+    var volume: Float {
+        get { node.volume }
+        set { node.volume = newValue.isFinite ? min(1,max(0,newValue)) : 0 }
+    }
     private let format = AVAudioFormat(standardFormatWithSampleRate:48_000,channels:2)!
     private var generation = 0
     private var lastPlay = Date.distantPast

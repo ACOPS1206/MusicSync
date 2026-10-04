@@ -3,7 +3,7 @@ import XCTest
 @testable import MusicSyncCore
 final class HealthTests: XCTestCase {
     func testOrdinaryClockVariationAndShortSpikeDoNotWarn() {
-        var monitor = SyncHealthMonitor(); var input = SyncHealthInput()
+        var monitor = SyncHealthMonitor(warmupDuration:0); var input = SyncHealthInput()
         input.uncertainty = 0.04
         for i in 0...20 { monitor.update(input,now:Double(i) / 2) }
         XCTAssertTrue(monitor.issues.isEmpty)
@@ -14,7 +14,7 @@ final class HealthTests: XCTestCase {
         XCTAssertTrue(monitor.issues.isEmpty)
     }
     func testSustainedClockRiskAndRecoveryHysteresis() {
-        var monitor = SyncHealthMonitor(); var input = SyncHealthInput(); input.uncertainty = 0.08
+        var monitor = SyncHealthMonitor(warmupDuration:0); var input = SyncHealthInput(); input.uncertainty = 0.08
         for i in 0..<10 { monitor.update(input,now:Double(i) / 2) }
         XCTAssertTrue(monitor.issues.isEmpty)
         monitor.update(input,now:5); XCTAssertEqual(monitor.issues,[.clock])
@@ -28,7 +28,7 @@ final class HealthTests: XCTestCase {
         monitor.update(input,now:13.5); XCTAssertTrue(monitor.issues.isEmpty)
     }
     func testAlternatingUnrelatedSpikesCannotAccumulate() {
-        var monitor = SyncHealthMonitor()
+        var monitor = SyncHealthMonitor(warmupDuration:0)
         for i in 0...30 {
             var input = SyncHealthInput()
             if i.isMultiple(of:2) { input.schedulingError = 0.1 } else { input.dropRate = 30 }
@@ -37,7 +37,7 @@ final class HealthTests: XCTestCase {
         XCTAssertTrue(monitor.issues.isEmpty)
     }
     func testOneIssueCannotImmediatelyPromoteAnother() {
-        var monitor = SyncHealthMonitor(); var input = SyncHealthInput(); input.schedulingError = 0.05
+        var monitor = SyncHealthMonitor(warmupDuration:0); var input = SyncHealthInput(); input.schedulingError = 0.05
         for i in 0...6 { monitor.update(input,now:Double(i) / 2) }
         XCTAssertEqual(monitor.issues,[.scheduling])
         input.uncertainty = 0.1; monitor.update(input,now:3.5)
@@ -46,17 +46,39 @@ final class HealthTests: XCTestCase {
         XCTAssertTrue(monitor.issues.contains(.clock))
     }
     func testGapInObservationsDoesNotCountAsSustainedRisk() {
-        var monitor = SyncHealthMonitor(); var input = SyncHealthInput(); input.uncertainty = 0.1
+        var monitor = SyncHealthMonitor(warmupDuration:0); var input = SyncHealthInput(); input.uncertainty = 0.1
         monitor.update(input,now:0); monitor.update(input,now:20)
         XCTAssertTrue(monitor.issues.isEmpty)
     }
     func testSilenceWhenNotStreamingDoesNotWarnButStalledStreamDoes() {
-        var monitor = SyncHealthMonitor(); var input = SyncHealthInput(); input.audioAge = 10
+        var monitor = SyncHealthMonitor(warmupDuration:0); var input = SyncHealthInput(); input.audioAge = 10
         for i in 0...8 { monitor.update(input,now:Double(i) / 2) }; XCTAssertTrue(monitor.issues.isEmpty)
         input.streaming = true
         for i in 9...15 { monitor.update(input,now:Double(i) / 2) }; XCTAssertEqual(monitor.issues,[.stalledAudio])
         input.monitor = true; monitor.update(input,now:8); XCTAssertTrue(monitor.issues.contains(.monitor))
         input.monitor = false; monitor.update(input,now:8.5); XCTAssertFalse(monitor.issues.contains(.monitor))
+    }
+    func testThirtySecondWarmupDoesNotAccumulateStartupErrors() {
+        var monitor = SyncHealthMonitor(startedAt:100)
+        var input = SyncHealthInput(); input.uncertainty = 0.1; input.dropRate = 50; input.monitor = true
+        for i in 0..<60 { monitor.update(input,now:100+Double(i)/2) }
+        XCTAssertTrue(monitor.issues.isEmpty)
+        XCTAssertEqual(monitor.warmupRemaining(now:129),1)
+        monitor.update(input,now:130)
+        XCTAssertEqual(monitor.issues,[.monitor])
+        for i in 1...5 { monitor.update(input,now:130+Double(i)/2) }
+        XCTAssertFalse(monitor.issues.contains(.drops))
+        monitor.update(input,now:133); XCTAssertTrue(monitor.issues.contains(.drops))
+        for i in 7...10 { monitor.update(input,now:130+Double(i)/2) }
+        XCTAssertTrue(monitor.issues.contains(.clock))
+    }
+    func testNewSyncSessionGetsAnotherWarmup() {
+        var monitor = SyncHealthMonitor(startedAt:0); var input = SyncHealthInput(); input.schedulingError = 0.1
+        for i in 0...66 { monitor.update(input,now:Double(i)/2) }
+        XCTAssertTrue(monitor.issues.contains(.scheduling))
+        monitor = SyncHealthMonitor(startedAt:40)
+        monitor.update(input,now:69.5); XCTAssertTrue(monitor.issues.isEmpty)
+        monitor.update(input,now:70); XCTAssertTrue(monitor.issues.isEmpty)
     }
     func testTrafficRatesAndResettingDropCounters() {
         var meter = TrafficMeter(); _ = meter.sample(now:1,drops:8)

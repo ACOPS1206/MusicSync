@@ -18,6 +18,10 @@ struct HelpView: View {
                     Text("Connect to a Host, compare all eight digits on both screens, confirm Codes Match on the Client, then approve on the Host within 60 seconds. Both devices need MusicSync 0.6 or later. A changed Host security key stops reconnect until you verify the Host and explicitly forget the old pairing.")
                     Text("TLS 1.3 encrypts initial pairing, audio, clock messages and device controls. The comparison code is computed independently from each TLS connection. After approval the Client pins the Host public key. Bonjour names and addresses remain visible. If Keychain saving is unavailable, encryption still works for this session; restart may require reapproval or forgetting a changed Host key.")
                 }
+                Section("Volume & permissions") {
+                    Text("These sliders adjust MusicSync playback only. System volume remains controlled by the device buttons or system settings.")
+                    Text("The Host manages permissions for each paired Client. Host-to-Client volume control is enabled by default; Client-to-Host and Client-to-Client control are disabled by default. To let one Client adjust another, allow control on the sender and reception on the target. Revoking permission blocks new requests immediately. Your own local volume is always adjustable.")
+                }
                 Section("Stereo pair") {
                     Text("In stereo pair mode, Test Tone plays a shared alignment pulse, then a lower left-only tone, then a higher right-only tone each second.")
                     Text("Choose Host left · Client right or Host right · Client left in Speaker layout before streaming. Place the devices on their assigned sides. Client Follow Host applies that assignment automatically. With multiple Clients, choose each output channel manually. Mono source files cannot create a true stereo image.")
@@ -45,7 +49,7 @@ struct HelpView: View {
                 }
                 Section("Sync warning") {
                     Text("Warnings use clock uncertainty, scheduling lateness, recent dropped packets, stale clock updates and stalled audio. They are estimates of risk, not a microphone measurement of the speakers. Clock offset alone is not a warning: devices can have very different uptimes.")
-                    Text("Clock uncertainty above 60 ms must persist for 5 seconds. Scheduling error above 25 ms, drops above 10 packets/s, clock age above 5 seconds or audio age above 2 seconds must persist for 3 seconds. Each risk is tracked independently. Warnings clear after 3 seconds below a lower recovery threshold. Monitor mode remains an immediate warning.")
+                    Text("Clock uncertainty above 60 ms must persist for 5 seconds. Scheduling error above 25 ms, drops above 10 packets/s, clock age above 5 seconds or audio age above 2 seconds must persist for 3 seconds. Each risk is tracked independently. Warnings clear after 3 seconds below a lower recovery threshold. Monitor mode is reported after the initial 30-second warning warmup.")
                 }
                 Section("Live Activity & Dynamic Island") {
                     Text("Enable the Live Activity toggle and connect or start Host while MusicSync is open. Lock Screen and Dynamic Island show role, session state, buffer, RTT, clock uncertainty and warnings. Metrics update about every five seconds, with faster state changes; iOS controls the actual display schedule. A stale label appears if updates stop.")
@@ -53,6 +57,7 @@ struct HelpView: View {
                 }
                 Section("License & attribution") {
                     Text("MusicSync by ACOPS1206")
+                    LabeledContent("App version",value:(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "—") + " (" + (Bundle.main.object(forInfoDictionaryKey:"CFBundleVersion") as? String ?? "—") + ")")
                     Text("MIT License. Commercial use, modification and redistribution are allowed. Keep the copyright notice and license with copies or substantial portions. Derivative source disclosure is not required.")
                     Link("Source code", destination: URL(string: "https://github.com/ACOPS1206/MusicSync")!)
                     Link("Full license", destination: URL(string: "https://github.com/ACOPS1206/MusicSync/blob/main/LICENSE")!)

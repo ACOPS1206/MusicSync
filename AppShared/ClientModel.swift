@@ -16,6 +16,7 @@ struct NearbyMac: Identifiable {
     @Published var sessionID = UUID()
     @Published var sessionPhase = "Waiting"
     @Published var syncIssues: [SyncIssue] = []
+    @Published var syncWarmupRemaining = SyncHealthPolicy.warmupDuration
     @Published var healthInput = SyncHealthInput()
     @Published var traffic = TrafficSnapshot()
     @Published var bufferCount = 0
@@ -38,6 +39,10 @@ struct NearbyMac: Identifiable {
     private var tlsTrust: TLSClientTrust?
     private var tlsSession: TLSSessionInfo?
     private var sentPairingProof = false
+    private var receivedChallenge = false
+    private var initialFailures = 0
+    private var establishedSession = false
+    private var connectionFailure: String?
     private var sessionPins: [String:String] = [:]
     @Published var connectedHostName = ""
     @Published var hostAddress = ""
@@ -59,6 +64,23 @@ struct NearbyMac: Identifiable {
     @Published var latency = 0.18
     @Published var uncertainty = 0.0
     @Published var dropped = 0
+    @Published var outputVolume = 1.0 { didSet {
+        outputVolume = min(1,max(0,outputVolume.isFinite ? outputVolume : 0))
+        player.volume = Float(outputVolume); identifierSound.volume = Float(outputVolume)
+        if !applyingVolumeCommand { reportVolume() }
+    } }
+    @Published var hostVolume = 1.0
+    @Published var pendingHostVolume: Double?
+    @Published var canControlHostVolume = false
+    @Published var hostCanControlClientVolume = false
+    @Published var supportsVolumeControl = false
+    @Published var volumePeers: [VolumePeer] = []
+    @Published var peersCanControlClientVolume = false
+    @Published var pendingPeerVolumes: [UUID:Double] = [:]
+    private var peerVolumeTasks: [UUID:DispatchWorkItem] = [:]
+    private var applyingVolumeCommand = false
+    private var hostVolumeTask: DispatchWorkItem?
+    private var hostVolumeRequestID: String?
     @Published var calibrationMS = 0.0
     @Published var channelOverride = ChannelSelection.automatic { didSet { reportChannel() } }
     @Published var hostChannel = OutputChannel.stereo { didSet { reportChannel() } }
@@ -109,7 +131,7 @@ struct NearbyMac: Identifiable {
                 if case let .service(name, _, _, _) = result.endpoint { return NearbyMac(name: name, endpoint: result.endpoint) }
                 return nil
             }.sorted { $0.name < $1.name }
-            if self.wantConnection, self.peer == nil, let found = self.nearby.first(where: { $0.name == self.selectedName }) { self.open(found) }
+            if self.wantConnection, self.peer == nil, self.retry == nil, let found = self.nearby.first(where: { $0.name == self.selectedName }) { self.open(found) }
          } }
         browser.stateUpdateHandler = { [weak self, weak browser] state in MainActor.assumeIsolated {
             guard let self, self.browser === browser else { return }
@@ -144,11 +166,11 @@ struct NearbyMac: Identifiable {
         }
         disconnect(); sessionID = UUID()
         let mac = NearbyMac(name: value, endpoint: .hostPort(host: NWEndpoint.Host(hostname), port: nwPort))
-        directMac = mac; selectedName = mac.name; wantConnection = true
+        directMac = mac; selectedName = mac.name; initialFailures = 0; wantConnection = true
         error = nil; open(mac)
     }
     func connect(_ mac: NearbyMac) {
-        disconnect(); sessionID = UUID(); wantConnection = true; selectedName = mac.name
+        disconnect(); sessionID = UUID(); initialFailures = 0; wantConnection = true; selectedName = mac.name
         open(mac)
     }
     private func open(_ mac: NearbyMac) {
@@ -162,20 +184,25 @@ struct NearbyMac: Identifiable {
         let knownID = UserDefaults.standard.string(forKey:"tls.endpoint." + mac.name)
         let expectedPin = knownID.flatMap { sessionPins[$0] ?? PairingStore.read("pin." + $0) }
         pairingHostID = knownID
-        let trust = TLSClientTrust(expectedPin:expectedPin); tlsTrust = trust; tlsSession = nil; sentPairingProof = false
+        let trust = TLSClientTrust(expectedPin:expectedPin); tlsTrust = trust; tlsSession = nil; sentPairingProof = false; receivedChallenge = false; connectionFailure = nil
         let peer = Peer(NWConnection(to:mac.endpoint,using:LAN.clientParameters(trust:trust)),queue:.main)
         self.peer = peer; status = String(format: tr("Connecting to %@…"), mac.name)
+        peer.onFailure = { [weak self, weak peer] reason in
+            guard let self, let peer, self.peer === peer else { return }
+            self.connectionFailure = reason
+        }
         peer.onState = { [weak self, weak peer] state in
             guard let self, let peer, self.peer === peer else { return }
             switch state {
             case .ready:
-                guard let session = TLSSessionInfo.read(peer.connection), trust.publicKeyPin != nil else {
+                guard let session = peer.tlsSession, trust.publicKeyPin != nil else {
                     self.securityFailure(tr("Encrypted connection verification failed. No audio was sent.")); return
                 }
                 self.tlsSession = session; self.encrypted = true
                 self.connected = true; self.status = tr("Authenticating with Host…"); self.sessionPhase = "Authenticating"
                 var hello = Message("hello"); hello.pairingVersion = 2; hello.deviceID = self.deviceID
                 hello.channelSelection = self.channelOverride.rawValue
+                hello.volumeControlVersion = 1; hello.volume = self.outputVolume
                 #if os(iOS)
                 hello.name = UIDevice.current.name
                 #else
@@ -183,7 +210,7 @@ struct NearbyMac: Identifiable {
                 #endif
                 peer.send(hello)
                 DispatchQueue.main.asyncAfter(deadline:.now()+15) { [weak self, weak peer] in
-                    guard let self, let peer, self.peer === peer, !self.paired, self.pairingHostID == nil else { return }
+                    guard let self, let peer, self.peer === peer, !self.paired, !self.receivedChallenge else { return }
                     self.disconnect(); self.error = tr("The Host did not respond to pairing. Update MusicSync on both devices and reconnect.")
                 }
             case .failed(let error), .waiting(let error):
@@ -204,7 +231,7 @@ struct NearbyMac: Identifiable {
         if message.kind == "pairChallenge" {
             guard !paired, message.pairingVersion == 2, let hostID = message.hostID, UUID(uuidString:hostID) != nil,
                   let nonce = message.nonce, UUID(uuidString:nonce) != nil else { return }
-            pairingHostID = hostID; pairingNonce = nonce; updateHostInfo(message)
+            receivedChallenge = true; pairingHostID = hostID; pairingNonce = nonce; updateHostInfo(message)
             guard let currentPin = tlsTrust?.publicKeyPin, let session = tlsSession else { securityFailure(tr("Encrypted connection verification failed. No audio was sent.")); return }
             let savedPin = sessionPins[hostID] ?? PairingStore.read("pin." + hostID)
             if let savedPin, savedPin != currentPin { securityFailure(tr("The Host security key changed. Verify the Host and forget its old pairing before reconnecting.")); return }
@@ -235,16 +262,46 @@ struct NearbyMac: Identifiable {
                     securityFailure(tr("Confirm the matching code on both devices before approval.")); return
                 }
             }
-            paired = true; pairingCode = ""; updateHostInfo(message)
+            paired = true; establishedSession = true; initialFailures = 0; pairingCode = ""; updateHostInfo(message)
+            supportsVolumeControl = message.volumeControlVersion == 1
+            applyVolumePolicy(message); reportVolume()
             if let raw = message.outputChannel, let channel = OutputChannel(rawValue:raw) { hostChannel = channel }
             do { try player.start() } catch { self.error = error.localizedDescription; disconnect(); return }
+            health = SyncHealthMonitor(startedAt:now); syncWarmupRemaining = SyncHealthPolicy.warmupDuration
             status = tr("Synchronizing clocks…"); sessionPhase = "Synchronizing"; reportChannel(); startTimers()
             return
         } else if message.kind == "pairRejected" {
             disconnect(); error = tr("The Host declined or expired this pairing. Connect again to request approval."); return
         }
         guard paired else { return }
-        if message.kind == "setChannel", let raw = message.channelSelection, let selection = ChannelSelection(rawValue:raw) {
+        if message.kind == "volumePeers", let roster = message.volumePeers, roster.count <= 32,
+           Set(roster.map(\.id)).count == roster.count, roster.allSatisfy({ VolumeControl.valid($0.volume) != nil && $0.name.count <= 80 }) {
+            volumePeers = roster
+            for id in Array(pendingPeerVolumes.keys) where !roster.contains(where: { $0.id == id && $0.canControl }) {
+                pendingPeerVolumes[id] = nil; peerVolumeTasks.removeValue(forKey:id)?.cancel()
+            }
+            return
+        } else if message.kind == "peerVolumeDenied" {
+            if let id = message.targetPeerID { pendingPeerVolumes[id] = nil; peerVolumeTasks.removeValue(forKey:id)?.cancel() }
+            error = tr("The volume change was denied or not confirmed. Check permissions on the Host."); return
+        } else if message.kind == "volumePolicy" {
+            applyVolumePolicy(message); return
+        } else if message.kind == "hostVolume", let value = VolumeControl.valid(message.hostVolume) {
+            hostVolume = value; return
+        } else if message.kind == "volumeResult", message.volumeTarget == "host", message.requestID == hostVolumeRequestID {
+            hostVolumeRequestID = nil; pendingHostVolume = nil
+            if let value = VolumeControl.valid(message.hostVolume) { hostVolume = value }
+            if message.accepted != true { error = tr("The Host denied the volume change. Ask the Host to grant permission.") }
+            return
+        } else if message.kind == "setClientVolume" {
+            if supportsVolumeControl, (message.targetPeerID == nil ? hostCanControlClientVolume : peersCanControlClientVolume), let value = VolumeControl.valid(message.volume) {
+                applyingVolumeCommand = true; outputVolume = value; applyingVolumeCommand = false
+                reportVolume(requestID:message.requestID)
+            } else {
+                var denied = Message("volumeResult"); denied.accepted = false; denied.volumeTarget = "client"; denied.requestID = message.requestID; peer?.send(denied)
+            }
+            return
+        } else if message.kind == "setChannel", let raw = message.channelSelection, let selection = ChannelSelection(rawValue:raw) {
             if let channel = message.outputChannel.flatMap(OutputChannel.init(rawValue:)) { hostChannel = channel }
             channelOverride = selection; reportChannel(requestID:message.requestID); return
         } else if message.kind == "hostChannel", let raw = message.outputChannel, let channel = OutputChannel(rawValue:raw) {
@@ -275,6 +332,7 @@ struct NearbyMac: Identifiable {
             if audioInterrupted { return }
             if lastEpoch != message.epoch {
                 player.stop(); try? player.start(); buffer = JitterQueue(); lastEpoch = message.epoch
+                health = SyncHealthMonitor(startedAt:now); syncIssues = []; syncWarmupRemaining = SyncHealthPolicy.warmupDuration
             }
             meter.record(bytes: message.payload?.count ?? 0)
             monitorMode = message.monitor ?? false
@@ -327,7 +385,7 @@ struct NearbyMac: Identifiable {
             var input = SyncHealthInput(); input.uncertainty = uncertainty; input.schedulingError = peakScheduleError
             input.dropRate = traffic.dropsPerSecond; input.clockAge = lastPong > 0 ? now - lastPong : 0
             input.streaming = sessionPhase == "Streaming"; input.audioAge = lastAudio > 0 ? now - lastAudio : 0
-            input.monitor = monitorMode; healthInput = input; health.update(input,now:now); syncIssues = health.issues
+            input.monitor = monitorMode; healthInput = input; health.update(input,now:now); syncIssues = health.issues; syncWarmupRemaining = health.warmupRemaining(now:now)
             peakScheduleError = 0; lastUpdated = Date()
             if lastAudio > 0 { status = now - lastAudio < 1 ? tr("Streaming • scheduled playback") : tr("Connected • no recent audio") }
             lastUI = now
@@ -345,6 +403,43 @@ struct NearbyMac: Identifiable {
         var message = Message("channelReport"); message.channelSelection = channelOverride.rawValue
         message.playbackState = sessionPhase
         message.outputChannel = effectiveChannel.rawValue; message.requestID = requestID; peer?.send(message)
+    }
+    private func applyVolumePolicy(_ message: Message) {
+        canControlHostVolume = supportsVolumeControl && (message.allowClientHostVolume ?? false)
+        hostCanControlClientVolume = supportsVolumeControl && (message.allowHostClientVolume ?? false)
+        peersCanControlClientVolume = supportsVolumeControl && (message.allowPeerClientVolume ?? false)
+        if let value = VolumeControl.valid(message.hostVolume) { hostVolume = value }
+        if !canControlHostVolume { hostVolumeTask?.cancel(); hostVolumeTask = nil; pendingHostVolume = nil; hostVolumeRequestID = nil }
+    }
+    private func reportVolume(requestID: String? = nil) {
+        guard paired, supportsVolumeControl else { return }
+        var report = Message("volumeReport"); report.volume = outputVolume; report.requestID = requestID; peer?.send(report)
+    }
+    func requestPeerVolume(_ id: UUID, volume: Double) {
+        guard paired, supportsVolumeControl, volumePeers.contains(where: { $0.id == id && $0.canControl }), let value = VolumeControl.valid(volume) else { return }
+        pendingPeerVolumes[id] = value; peerVolumeTasks[id]?.cancel()
+        let task = DispatchWorkItem { [weak self] in
+            guard let self else { return }; self.peerVolumeTasks[id] = nil
+            guard self.paired, self.volumePeers.contains(where: { $0.id == id && $0.canControl }), let value = self.pendingPeerVolumes.removeValue(forKey:id) else { return }
+            var request = Message("setPeerVolume"); request.targetPeerID = id; request.volume = value; self.peer?.send(request)
+        }
+        peerVolumeTasks[id] = task; DispatchQueue.main.asyncAfter(deadline:.now()+0.1,execute:task)
+    }
+    func requestHostVolume(_ volume: Double) {
+        guard paired, canControlHostVolume, let value = VolumeControl.valid(volume) else { return }
+        pendingHostVolume = value; hostVolumeTask?.cancel()
+        let task = DispatchWorkItem { [weak self] in self?.sendHostVolume() }
+        hostVolumeTask = task; DispatchQueue.main.asyncAfter(deadline:.now()+0.1,execute:task)
+    }
+    private func sendHostVolume() {
+        hostVolumeTask = nil
+        guard paired, canControlHostVolume, let volume = pendingHostVolume else { return }
+        let request = UUID().uuidString; hostVolumeRequestID = request
+        var message = Message("setHostVolume"); message.volume = volume; message.requestID = request; peer?.send(message)
+        DispatchQueue.main.asyncAfter(deadline:.now()+3) { [weak self] in
+            guard let self, self.hostVolumeRequestID == request else { return }
+            self.hostVolumeRequestID = nil; self.pendingHostVolume = nil; self.error = tr("The Host did not confirm the volume change.")
+        }
     }
     func confirmPairingCode() {
         guard !paired, !pairingCode.isEmpty, pairingCode == tlsSession?.pairingCode else { return }
@@ -375,23 +470,36 @@ struct NearbyMac: Identifiable {
         browser?.cancel(); browser = nil; searching = false; nearby.removeAll()
     }
     func disconnect() {
-        wantConnection = false; retry?.cancel(); retry = nil
+        wantConnection = false; establishedSession = false; retry?.cancel(); retry = nil
         let old = peer; peer = nil; old?.cancel()
         cleanup(); selectedName = nil; directMac = nil; reconnectTarget = nil; hostAddress = ""; hostServiceName = ""; connectedHostName = ""; pairingHostID = nil; status = tr("Disconnected"); sessionPhase = "Stopped"
     }
     private func cleanup() {
         pingTimer?.invalidate(); drainTimer?.invalidate(); pingTimer = nil; drainTimer = nil
+        for task in peerVolumeTasks.values { task.cancel() }; peerVolumeTasks.removeAll(); pendingPeerVolumes.removeAll(); volumePeers = []; peersCanControlClientVolume = false
+        hostVolumeTask?.cancel(); hostVolumeTask = nil; hostVolumeRequestID = nil; pendingHostVolume = nil; canControlHostVolume = false; hostCanControlClientVolume = false; supportsVolumeControl = false
         identifierSound.stop(); paired = false; pairingCode = ""; codeConfirmed = false; encrypted = false; tlsSession = nil
         player.stop(); buffer = JitterQueue(); connected = false; lastAudio = 0; lastReport = 0
         health = SyncHealthMonitor(); syncIssues = []; bufferCount = 0; bufferAheadMS = 0; schedulingErrorMS = 0; traffic = TrafficSnapshot()
     }
     private func lost() {
+        let beforeApproval = !establishedSession
+        let detail = connectionFailure ?? error ?? tr("The remote device closed the connection")
         let old = peer; peer = nil; old?.cancel(); cleanup()
         guard wantConnection else { return }
+        if beforeApproval {
+            initialFailures += 1
+            if initialFailures >= 3 {
+                wantConnection = false; retry?.cancel(); retry = nil
+                error = String(format:tr("Pairing stopped after %d failed connections. %@. Update both devices and try connecting again."),initialFailures,detail)
+                status = tr("Pairing connection failed"); sessionPhase = "Stopped"; return
+            }
+        }
         status = tr("Connection lost • reconnecting…"); sessionPhase = "Reconnecting"
         retry?.cancel()
         let task = DispatchWorkItem { [weak self] in
             guard let self, self.wantConnection, let mac = self.reconnectTarget else { return }
+            self.retry = nil
             self.open(mac)
         }
         retry = task; DispatchQueue.main.asyncAfter(deadline:.now()+2,execute:task)

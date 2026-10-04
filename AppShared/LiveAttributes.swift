@@ -15,6 +15,9 @@ struct MusicSyncActivityAttributes: ActivityAttributes {
         var warning: Bool
         var offsetMS: Double? = nil
         var jitterMS: Double? = nil
+        var outputChannel: String? = nil
+        var speakerLayout: String? = nil
+        var followsHost: Bool? = nil
     }
     var role: String
     var sessionID: String

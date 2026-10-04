@@ -48,15 +48,6 @@ struct ClientView: View {
                         if let notice = model.pairingNotice { Text(notice).font(.caption).foregroundStyle(.secondary) }
                     }
                 }
-                SyncWarningView(issues:model.syncIssues,input:model.healthInput,rtt:model.rtt,jitter:model.jitter)
-                if model.selectedName != nil {
-                    RealtimeStatusView(phase:model.sessionPhase,traffic:model.traffic,drops:model.dropped,schedulingErrorMS:model.schedulingErrorMS,updated:model.lastUpdated,timing:TimingSummaryView(latency:model.latency,rtt:model.rtt,offset:model.offset,jitter:model.jitter,uncertainty:model.uncertainty,drops:model.dropped))
-                    Section("Audio queue") {
-                        LabeledContent("Buffered packets", value: String(model.bufferCount))
-                        LabeledContent("Scheduled ahead", value: String(format:"%.0f ms",model.bufferAheadMS))
-                    }
-                }
-                LiveActivitySettingsView()
                 Section("Nearby Hosts") {
                     if model.nearby.isEmpty && model.searching { HStack { ProgressView(); Text("Searching…") } }
                     ForEach(model.nearby) { mac in
@@ -102,6 +93,19 @@ struct ClientView: View {
                     }
                     Section { Button("Disconnect",role:.destructive) { model.disconnect() }.buttonStyle(.glass) }
                 }
+                ClientVolumeView(model:model)
+                if model.paired, model.syncWarmupRemaining > 0 {
+                    Label(String(format:tr("Sync warning detection starts in %.0f seconds"),ceil(model.syncWarmupRemaining)),systemImage:"hourglass").font(.caption).foregroundStyle(.secondary)
+                }
+                SyncWarningView(issues:model.syncIssues,input:model.healthInput,rtt:model.rtt,jitter:model.jitter)
+                if model.selectedName != nil {
+                    RealtimeStatusView(phase:model.sessionPhase,traffic:model.traffic,drops:model.dropped,schedulingErrorMS:model.schedulingErrorMS,updated:model.lastUpdated,timing:TimingSummaryView(latency:model.latency,rtt:model.rtt,offset:model.offset,jitter:model.jitter,uncertainty:model.uncertainty,drops:model.dropped))
+                    Section("Audio queue") {
+                        LabeledContent("Buffered packets", value: String(model.bufferCount))
+                        LabeledContent("Scheduled ahead", value: String(format:"%.0f ms",model.bufferAheadMS))
+                    }
+                }
+                LiveActivitySettingsView()
                 if let error = model.error { Section("Attention") { Text(error).foregroundStyle(.red) } }
                 ProjectLinkView()
             }.navigationTitle(sessionTitle(model.sessionPhase))

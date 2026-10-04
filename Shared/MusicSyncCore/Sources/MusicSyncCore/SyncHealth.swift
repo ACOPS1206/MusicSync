@@ -39,6 +39,7 @@ public enum SyncHealthPolicy {
     }
     public static func sustainedDuration(for issue: SyncIssue) -> Double { issue == .clock ? 5 : 3 }
     public static let recoveryDuration = 3.0
+    public static let warmupDuration = 30.0
 }
 /// This flags sustained observable risk, not acoustic speaker alignment.
 /// Each issue has its own debounce and hysteresis; unrelated spikes cannot combine into a warning.
@@ -47,8 +48,22 @@ public struct SyncHealthMonitor {
     private var badSince: [SyncIssue: Double] = [:]
     private var stableSince: [SyncIssue: Double] = [:]
     private var lastUpdate: Double?
-    public init() {}
+    private var startedAt: Double?
+    private let warmupDuration: Double
+    public init(startedAt: Double? = nil, warmupDuration: Double = SyncHealthPolicy.warmupDuration) {
+        self.startedAt = startedAt; self.warmupDuration = max(0,warmupDuration)
+    }
+    public func warmupRemaining(now: Double) -> Double {
+        guard let startedAt else { return warmupDuration }
+        return max(0,warmupDuration - max(0,now-startedAt))
+    }
     public mutating func update(_ input: SyncHealthInput, now: Double) {
+        guard now.isFinite else { return }
+        if startedAt == nil || now < startedAt! { startedAt = now }
+        // Ignore startup observations entirely: they must not count toward sustained-duration warnings.
+        if warmupRemaining(now:now) > 0 {
+            issues = []; badSince.removeAll(); stableSince.removeAll(); lastUpdate = now; return
+        }
         // Missing observations do not establish continuous bad/good measurements.
         if let lastUpdate, now < lastUpdate || now - lastUpdate > 1.5 {
             badSince.removeAll(); stableSince.removeAll()
