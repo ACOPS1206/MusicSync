@@ -4,7 +4,7 @@ import SwiftUI
     var body: some Scene { WindowGroup { ClientView(model:model) } }
 }
 struct ClientView: View {
-    @State<Bool> private var showingHelp = false
+    @State private var showingHelp = false
     @ObservedObject var model: ClientModel
     var body: some View {
         NavigationStack {

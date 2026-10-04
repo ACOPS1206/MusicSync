@@ -7,7 +7,7 @@ import SwiftUI
     }
 }
 struct HostView: View {
-    @State<Bool> private var showingHelp = false
+    @State private var showingHelp = false
     @ObservedObject var model: HostModel
     var body: some View {
         NavigationStack {
