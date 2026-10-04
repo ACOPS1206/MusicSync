@@ -35,7 +35,7 @@ struct SyncWarningView: View {
                         }
                     }
                 }
-                Text("Most warnings appear after three consecutive checks and clear after three stable seconds. Current values may already be recovering.").font(.caption).foregroundStyle(.secondary)
+                Text("Clock uncertainty must stay high for 5 seconds; other transient risks must last 3 seconds. Warnings clear after 3 seconds below their recovery threshold. Current values may already be recovering.").font(.caption).foregroundStyle(.secondary)
                 Text("These warnings indicate synchronization risk, not a measured speaker-to-speaker error. Check Wi-Fi, use built-in speakers, and try the test tone with timing trim.").font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -43,17 +43,17 @@ struct SyncWarningView: View {
     private func details(_ issue: SyncIssue) -> String {
         switch issue {
         case .clock:
-            let values = String(format: tr("Current uncertainty %.1f ms = RTT %.1f ms / 2 + jitter %.1f ms. Warning threshold: > 25 ms."), input.uncertainty * 1000, rtt * 1000, jitter * 1000)
-            let cause = rtt / 2 > 0.025 && jitter > 0.025 ? tr("Both RTT and jitter are high.") : (jitter > rtt / 2 ? tr("Jitter contributes more than half the RTT.") : tr("Half the RTT contributes more than jitter."))
+            let values = String(format: tr("Current uncertainty %.1f ms = RTT %.1f ms / 2 + jitter %.1f ms. Warning: > %.0f ms for %.0f s; recovery: ≤ %.0f ms."), (rtt / 2 + jitter) * 1000, rtt * 1000, jitter * 1000, SyncHealthPolicy.threshold(for: .clock) * 1000, SyncHealthPolicy.sustainedDuration(for: .clock), SyncHealthPolicy.recoveryThreshold(for: .clock) * 1000)
+            let cause = rtt / 2 > SyncHealthPolicy.threshold(for: .clock) && jitter > SyncHealthPolicy.threshold(for: .clock) ? tr("Both RTT and jitter are high.") : (jitter > rtt / 2 ? tr("Jitter contributes more than half the RTT.") : tr("Half the RTT contributes more than jitter."))
             return values + "\n" + cause + " " + tr("Wi-Fi congestion, weak signal, retransmissions or device scheduling may contribute. These metrics cannot identify the exact cause or one-way delay.")
         case .scheduling:
-            return String(format: tr("Current scheduling error %.1f ms. Warning threshold: > 10 ms. Late audio or a busy audio scheduling thread can miss the presentation time."), input.schedulingError * 1000)
+            return String(format: tr("Current scheduling error %.1f ms. Warning: > %.0f ms for %.0f s; recovery: ≤ %.0f ms. Late audio or a busy audio scheduling thread can miss the presentation time."), input.schedulingError * 1000, SyncHealthPolicy.threshold(for: .scheduling) * 1000, SyncHealthPolicy.sustainedDuration(for: .scheduling), SyncHealthPolicy.recoveryThreshold(for: .scheduling) * 1000)
         case .drops:
-            return String(format: tr("Current packet drop rate %.1f /s. Warning threshold: > 3 /s. Late packets or an overfilled queue may be discarded."), input.dropRate)
+            return String(format: tr("Current packet drop rate %.1f /s. Warning: > %.0f /s for %.0f s; recovery: ≤ %.0f /s. Late packets or an overfilled queue may be discarded."), input.dropRate, SyncHealthPolicy.threshold(for: .drops), SyncHealthPolicy.sustainedDuration(for: .drops), SyncHealthPolicy.recoveryThreshold(for: .drops))
         case .staleClock:
-            return String(format: tr("Last clock update %.1f s ago. Warning threshold: > 3 s. Clock replies or Client status reports have stopped arriving."), input.clockAge)
+            return String(format: tr("Last clock update %.1f s ago. Warning: age > %.0f s for %.0f s; recovery age: ≤ %.0f s. Clock replies or Client status reports have stopped arriving."), input.clockAge, SyncHealthPolicy.threshold(for: .staleClock), SyncHealthPolicy.sustainedDuration(for: .staleClock), SyncHealthPolicy.recoveryThreshold(for: .staleClock))
         case .stalledAudio:
-            return String(format: tr("Last audio packet %.1f s ago. Warning threshold: > 1 s while streaming. Check the source, Host and network connection."), input.audioAge)
+            return String(format: tr("Last audio packet %.1f s ago. Warning: age > %.0f s for %.0f s while streaming; recovery age: ≤ %.0f s. Check the source, Host and network connection."), input.audioAge, SyncHealthPolicy.threshold(for: .stalledAudio), SyncHealthPolicy.sustainedDuration(for: .stalledAudio), SyncHealthPolicy.recoveryThreshold(for: .stalledAudio))
         case .monitor:
             return tr("ScreenCaptureKit leaves the original Mac output playing immediately. That output cannot follow the delayed Client timeline. Use synchronized CoreAudio capture to align both speakers.")
         }

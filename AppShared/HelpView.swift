@@ -41,7 +41,7 @@ struct HelpView: View {
                 }
                 Section("Sync warning") {
                     Text("Warnings use clock uncertainty, scheduling lateness, recent dropped packets, stale clock updates and stalled audio. They are estimates of risk, not a microphone measurement of the speakers. Clock offset alone is not a warning: devices can have very different uptimes.")
-                    Text("Most warnings require three consecutive half-second checks. They clear after three stable seconds. ScreenCaptureKit monitor mode warns immediately because the original Mac output cannot share the delayed timeline.")
+                    Text("Clock uncertainty above 60 ms must persist for 5 seconds. Scheduling error above 25 ms, drops above 10 packets/s, clock age above 5 seconds or audio age above 2 seconds must persist for 3 seconds. Each risk is tracked independently. Warnings clear after 3 seconds below a lower recovery threshold. Monitor mode remains an immediate warning.")
                 }
                 Section("Live Activity & Dynamic Island") {
                     Text("Enable the Live Activity toggle and connect or start Host while MusicSync is open. Lock Screen and Dynamic Island show role, session state, buffer, RTT, clock uncertainty and warnings. Metrics update about every five seconds, with faster state changes; iOS controls the actual display schedule. A stale label appears if updates stop.")

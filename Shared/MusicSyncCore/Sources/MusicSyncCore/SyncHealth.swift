@@ -15,28 +15,73 @@ public struct SyncHealthInput {
     public var monitor = false
     public init() {}
 }
-/// This flags observable risk; it does not measure acoustic speaker alignment.
+/// Shared warning policy: upper threshold, lower recovery threshold and sustained duration.
+public enum SyncHealthPolicy {
+    public static func threshold(for issue: SyncIssue) -> Double {
+        switch issue {
+        case .clock: return 0.060
+        case .scheduling: return 0.025
+        case .drops: return 10
+        case .staleClock: return 5
+        case .stalledAudio: return 2
+        case .monitor: return 0
+        }
+    }
+    public static func recoveryThreshold(for issue: SyncIssue) -> Double {
+        switch issue {
+        case .clock: return 0.045
+        case .scheduling: return 0.015
+        case .drops: return 5
+        case .staleClock: return 3
+        case .stalledAudio: return 1
+        case .monitor: return 0
+        }
+    }
+    public static func sustainedDuration(for issue: SyncIssue) -> Double { issue == .clock ? 5 : 3 }
+    public static let recoveryDuration = 3.0
+}
+/// This flags sustained observable risk, not acoustic speaker alignment.
+/// Each issue has its own debounce and hysteresis; unrelated spikes cannot combine into a warning.
 public struct SyncHealthMonitor {
     public private(set) var issues: [SyncIssue] = []
-    private var badSamples = 0
-    private var stableSince: Double?
+    private var badSince: [SyncIssue: Double] = [:]
+    private var stableSince: [SyncIssue: Double] = [:]
+    private var lastUpdate: Double?
     public init() {}
     public mutating func update(_ input: SyncHealthInput, now: Double) {
-        var candidates: [SyncIssue] = []
-        if input.uncertainty > 0.025 { candidates.append(.clock) }
-        if input.schedulingError > 0.010 { candidates.append(.scheduling) }
-        if input.dropRate > 3 { candidates.append(.drops) }
-        if input.clockAge > 3 { candidates.append(.staleClock) }
-        if input.streaming && input.audioAge > 1 { candidates.append(.stalledAudio) }
-        if input.monitor { candidates.append(.monitor) }
-        if !candidates.isEmpty {
-            stableSince = nil; badSamples += 1
-            if badSamples >= 3 || input.monitor { issues = candidates }
-        } else {
-            badSamples = 0
-            if stableSince == nil { stableSince = now }
-            if now - stableSince! >= 3 { issues = [] }
+        // Missing observations do not establish continuous bad/good measurements.
+        if let lastUpdate, now < lastUpdate || now - lastUpdate > 1.5 {
+            badSince.removeAll(); stableSince.removeAll()
         }
+        lastUpdate = now
+        var active = Set(issues)
+        for issue in SyncIssue.allCases {
+            if issue == .monitor {
+                if input.monitor { active.insert(issue) } else { active.remove(issue) }
+                continue
+            }
+            let value: Double
+            switch issue {
+            case .clock: value = input.uncertainty
+            case .scheduling: value = input.schedulingError
+            case .drops: value = input.dropRate
+            case .staleClock: value = input.clockAge
+            case .stalledAudio: value = input.streaming ? input.audioAge : 0
+            case .monitor: value = 0
+            }
+            if value > SyncHealthPolicy.threshold(for: issue) {
+                stableSince[issue] = nil
+                if badSince[issue] == nil { badSince[issue] = now }
+                if now - badSince[issue]! >= SyncHealthPolicy.sustainedDuration(for: issue) { active.insert(issue) }
+            } else {
+                badSince[issue] = nil
+                if value <= SyncHealthPolicy.recoveryThreshold(for: issue) {
+                    if stableSince[issue] == nil { stableSince[issue] = now }
+                    if now - stableSince[issue]! >= SyncHealthPolicy.recoveryDuration { active.remove(issue) }
+                } else { stableSince[issue] = nil }
+            }
+        }
+        issues = SyncIssue.allCases.filter { active.contains($0) }
     }
 }
 public struct TrafficSnapshot: Equatable, Sendable {
