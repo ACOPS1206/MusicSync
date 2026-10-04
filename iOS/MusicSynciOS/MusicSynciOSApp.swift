@@ -4,6 +4,7 @@ import SwiftUI
     var body: some Scene { WindowGroup { ClientView(model:model) } }
 }
 struct ClientView: View {
+    @State<Bool> private var showingHelp = false
     @ObservedObject var model: ClientModel
     var body: some View {
         NavigationStack {
@@ -59,9 +60,13 @@ struct ClientView: View {
                 }
                 if let error = model.error { Section("Attention") { Text(error).foregroundStyle(.red) } }
             }.navigationTitle("MusicSync")
+            .toolbar { ToolbarItem(placement: .primaryAction) {
+                Button { showingHelp = true } label: { Label("Help", systemImage: "questionmark.circle") }
+            } }
+            .sheet(isPresented: $showingHelp) { HelpView() }
         }
     }
     private func metric(_ title: String, _ seconds: Double) -> some View {
-        LabeledContent(title,value:String(format:"%.1f ms",seconds * 1000)).monospacedDigit()
+        LabeledContent(tr(title),value:String(format:"%.1f ms",seconds * 1000)).monospacedDigit()
     }
 }

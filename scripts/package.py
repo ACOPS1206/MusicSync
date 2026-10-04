@@ -11,6 +11,11 @@ def verify(app, platform):
     run('file',str(executable))
     minimum=info.get('LSMinimumSystemVersion') if platform=='macOS' else info.get('MinimumOSVersion')
     if minimum != '26.0': raise RuntimeError('Unexpected minimum OS: '+str(minimum))
+    resources = app/'Contents/Resources' if platform=='macOS' else app
+    for language in ['en','ko']:
+        for filename in ['Localizable.strings','InfoPlist.strings']:
+            if not (resources/(language+'.lproj')/filename).is_file():
+                raise RuntimeError('Missing localization: '+language+'/'+filename)
     return info
 
 def main():

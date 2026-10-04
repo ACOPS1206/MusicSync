@@ -19,7 +19,7 @@ struct ConnectedDevice: Identifiable {
     @Published var connectionAddress = ""
     @Published var streaming = false
     @Published var busy = false
-    @Published var status = "Ready"
+    @Published var status = tr("Ready")
     @Published var error: String?
     @Published var devices: [ConnectedDevice] = []
     @Published var latency = 0.18
@@ -58,7 +58,7 @@ struct ConnectedDevice: Identifiable {
                 guard let self else { return }
                 switch state {
                 case .ready:
-                    self.active = true; self.status = "Host available on LAN"
+                    self.active = true; self.status = tr("Host available on LAN")
                     if let name = SCDynamicStoreCopyLocalHostName(nil) as String?, let port = listener?.port {
                         self.connectionAddress = "\(name).local:\(port.rawValue)"
                     }
@@ -67,14 +67,14 @@ struct ConnectedDevice: Identifiable {
                 }
              } }
             self.listener = listener; listener.start(queue: .main)
-            status = "Starting Bonjour…"
+            status = tr("Starting Bonjour…")
         } catch { self.error = error.localizedDescription }
     }
     func stopHost() {
         Task { await stopStreaming() }
         listener?.cancel(); listener = nil; connectionAddress = ""
         for peer in peers.values { peer.cancel() }
-        peers.removeAll(); devices.removeAll(); active = false; status = "Stopped"
+        peers.removeAll(); devices.removeAll(); active = false; status = tr("Stopped")
     }
     private func accept(_ connection: NWConnection) {
         let peer = Peer(connection, queue: .main)
@@ -120,7 +120,7 @@ struct ConnectedDevice: Identifiable {
         do {
             if mode == 0 || testTone { try player.start() }
             if testTone {
-                streaming = true; status = "Synchronized test tone"
+                streaming = true; status = tr("Synchronized test tone")
                 toneTimer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.tone()  } }
             } else {
                 let source: AudioCapture
@@ -137,7 +137,7 @@ struct ConnectedDevice: Identifiable {
                 }
                 try await source.start()
                 streaming = true
-                status = mode == 0 ? "Synchronized system audio" : "ScreenCaptureKit monitor • original Mac output is ahead"
+                status = mode == 0 ? tr("Synchronized system audio") : tr("ScreenCaptureKit monitor • original Mac output is ahead")
             }
         } catch {
             self.error = error.localizedDescription
@@ -149,7 +149,7 @@ struct ConnectedDevice: Identifiable {
         await capture?.stop(); capture = nil; player.stop(); nextPTS = nil
         var message = Message("stop"); message.epoch = epoch
         for peer in peers.values { peer.send(message) }
-        status = active ? "Host available on LAN" : "Stopped"
+        status = active ? tr("Host available on LAN") : tr("Stopped")
     }
     private func tone() {
         var samples = [Float](repeating: 0, count: 960)

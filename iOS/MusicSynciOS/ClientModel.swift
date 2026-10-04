@@ -10,7 +10,7 @@ struct NearbyMac: Identifiable {
 }
 @MainActor final class ClientModel: ObservableObject {
     @Published var nearby: [NearbyMac] = []
-    @Published var status = "Ready to search"
+    @Published var status = tr("Ready to search")
     @Published var connected = false
     @Published var searching = false
     @Published var selectedName: String?
@@ -43,12 +43,14 @@ struct NearbyMac: Identifiable {
     private var interruptionObserver: NSObjectProtocol?
     private var lastEpoch: UInt64?
     private var lastAudio = 0.0
+    private var receivedLatency = 0.18
+    private var playbackDrops = 0
     init() {
         routeObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.restartAudio()  } }
         interruptionObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] notification in MainActor.assumeIsolated {
             guard let type = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt else { return }
             if type == AVAudioSession.InterruptionType.began.rawValue {
-                self?.player.stop(); self?.buffer = JitterQueue(); self?.status = "Audio interrupted"
+                self?.player.stop(); self?.buffer = JitterQueue(); self?.status = tr("Audio interrupted")
             } else { self?.restartAudio() }
          } }
     }
@@ -76,13 +78,13 @@ struct NearbyMac: Identifiable {
             default: break
             }
          } }
-        self.browser = browser; browser.start(queue: .main); status = "Searching nearby Macs…"
+        self.browser = browser; browser.start(queue: .main); status = tr("Searching nearby Macs…")
     }
     private func discoveryFailed(_ failure: NWError) {
-        searching = false; status = "Discovery unavailable"
+        searching = false; status = tr("Discovery unavailable")
         if case .dns(let code) = failure, code == -65555 || code == -65570 {
             discoveryDenied = true
-            error = "Bonjour access was denied. In LiveContainer, the host app must allow _musicsync._tcp; the guest Info.plist cannot grant this. Enable Local Network for LiveContainer, then use the Mac connection address below, or install MusicSync directly with signing."
+            error = tr("Bonjour access was denied. In LiveContainer, the host app must allow _musicsync._tcp; the guest Info.plist cannot grant this. Enable Local Network for LiveContainer, then use the Mac connection address below, or install MusicSync directly with signing.")
         } else { error = failure.localizedDescription }
     }
     func connectDirect() {
@@ -93,7 +95,7 @@ struct NearbyMac: Identifiable {
               components.path.isEmpty, components.query == nil, components.fragment == nil,
               let port = components.port, (1...65535).contains(port),
               let nwPort = NWEndpoint.Port(rawValue: UInt16(port)) else {
-            error = "Paste the Mac connection address, for example MacBook.local:49152."; return
+            error = tr("Paste the Mac connection address, for example MacBook.local:49152."); return
         }
         disconnect()
         let mac = NearbyMac(name: value, endpoint: .hostPort(host: NWEndpoint.Host(hostname), port: nwPort))
@@ -108,15 +110,15 @@ struct NearbyMac: Identifiable {
         guard peer == nil else { return }
         retry?.cancel(); retry = nil
         clock = ClockEstimate(); buffer = JitterQueue(); lastEpoch = nil; pendingPings.removeAll(); pings = 0
-        requestedLatency = 0.18
+        requestedLatency = 0.18; receivedLatency = 0.18; playbackDrops = 0; dropped = 0
         let peer = Peer(NWConnection(to: mac.endpoint, using: LAN.parameters()), queue: .main)
-        self.peer = peer; status = "Connecting to \(mac.name)…"
+        self.peer = peer; status = String(format: tr("Connecting to %@…"), mac.name)
         peer.onState = { [weak self, weak peer] state in
             guard let self, let peer, self.peer === peer else { return }
             switch state {
             case .ready:
                 do { try self.player.start() } catch { self.error = error.localizedDescription; self.disconnect(); return }
-                self.connected = true; self.status = "Synchronizing clocks…"
+                self.connected = true; self.status = tr("Synchronizing clocks…")
                 var hello = Message("hello"); hello.name = UIDevice.current.name; peer.send(hello)
                 self.startTimers()
             case .failed(let error): self.error = error.localizedDescription; self.lost()
@@ -143,17 +145,17 @@ struct NearbyMac: Identifiable {
                 var stats = Message("stats"); stats.rtt = rtt; stats.offset = offset; stats.jitter = jitter
                 stats.latency = max(requestedLatency, min(0.5, max(0.18, rtt / 2 + 4 * jitter + player.outputLatency + 0.07)))
                 peer?.send(stats); lastReport = now
-                if lastAudio == 0 { status = "Connected • waiting for Host audio" }
+                if lastAudio == 0 { status = tr("Connected • waiting for Host audio") }
             }
         } else if message.kind == "audio", clock.ready, message.validAudio {
             if lastEpoch != message.epoch {
                 player.stop(); try? player.start(); buffer = JitterQueue(); lastEpoch = message.epoch
             }
             buffer.insert(message); lastAudio = now
-            if let delay = message.latency, delay.isFinite, (0.18...0.5).contains(delay) { latency = delay }
+            if let delay = message.latency, delay.isFinite, (0.18...0.5).contains(delay) { receivedLatency = delay }
         } else if message.kind == "stop" {
             player.stop(); try? player.start(); buffer = JitterQueue(); lastAudio = 0
-            status = "Connected • Host stopped streaming"
+            status = tr("Connected • Host stopped streaming")
         }
     }
     private func startTimers() {
@@ -179,13 +181,14 @@ struct NearbyMac: Identifiable {
         player.calibration = calibrationMS / 1000
         let before = buffer.drops
         let lead = max(0.025, player.outputLatency + abs(player.calibration) + 0.01)
-        for packet in buffer.take(now:now, offset:clock.offset, horizon:max(0.065,lead + 0.03), minimumLead:lead) {
-            if !player.schedule(packet, offset:clock.offset) { dropped += 1 }
+        for packet in buffer.take(now:now, offset:clock.offset, horizon:max(0.130,lead + 0.04), minimumLead:lead) {
+            if !player.schedule(packet, offset:clock.offset) { playbackDrops += 1 }
         }
         if buffer.drops > before { requestedLatency = min(0.5, latency + 0.02) }
         if now - lastUI > 0.5 {
-            dropped = max(dropped, buffer.drops)
-            if lastAudio > 0 { status = now - lastAudio < 1 ? "Streaming • scheduled playback" : "Connected • no recent audio" }
+            dropped = playbackDrops + buffer.drops
+            latency = receivedLatency
+            if lastAudio > 0 { status = now - lastAudio < 1 ? tr("Streaming • scheduled playback") : tr("Connected • no recent audio") }
             lastUI = now
         }
     }
@@ -197,7 +200,7 @@ struct NearbyMac: Identifiable {
     func disconnect() {
         wantConnection = false; retry?.cancel(); retry = nil
         let old = peer; peer = nil; old?.cancel()
-        cleanup(); selectedName = nil; directMac = nil; status = "Disconnected"
+        cleanup(); selectedName = nil; directMac = nil; status = tr("Disconnected")
     }
     private func cleanup() {
         pingTimer?.invalidate(); drainTimer?.invalidate(); pingTimer = nil; drainTimer = nil
@@ -206,7 +209,7 @@ struct NearbyMac: Identifiable {
     private func lost() {
         let old = peer; peer = nil; old?.cancel(); cleanup()
         guard wantConnection else { return }
-        status = "Connection lost • reconnecting…"
+        status = tr("Connection lost • reconnecting…")
         retry?.cancel()
         let task = DispatchWorkItem { [weak self] in
             guard let self, self.wantConnection, let mac = self.directMac ?? self.nearby.first(where: { $0.name == self.selectedName }) else { return }

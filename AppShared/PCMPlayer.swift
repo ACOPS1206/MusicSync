@@ -7,6 +7,7 @@ final class PCMPlayer {
     private let node = AVAudioPlayerNode()
     private let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2)!
     private(set) var running = false
+    private var timeline = PlaybackTimeline()
     var calibration = 0.0
     var outputLatency: Double {
         #if os(iOS)
@@ -27,7 +28,7 @@ final class PCMPlayer {
         #endif
         try engine.start(); node.play(); running = true
     }
-    func stop() { node.stop(); engine.stop(); running = false }
+    func stop() { node.stop(); engine.stop(); running = false; timeline = PlaybackTimeline() }
     @discardableResult func schedule(_ packet: Message, offset: Double) -> Bool {
         guard running, packet.validAudio, let frames = packet.frames, let data = packet.payload, let pts = packet.pts,
               let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)),
@@ -44,7 +45,9 @@ final class PCMPlayer {
         }
         let renderTime = pts - offset - outputLatency + calibration
         guard renderTime > SyncClock.now + 0.003 else { return false }
-        node.scheduleBuffer(buffer, at: AVAudioTime(hostTime: AVAudioTime.hostTime(forSeconds: renderTime)), options: [])
+        let anchor = timeline.schedule(sequence: packet.sequence!, epoch: packet.epoch!, desired: renderTime, duration: Double(frames) / 48_000, now: SyncClock.now)
+        let time = anchor.map { AVAudioTime(hostTime: AVAudioTime.hostTime(forSeconds: $0)) }
+        node.scheduleBuffer(buffer, at: time, options: [])
         return true
     }
 }

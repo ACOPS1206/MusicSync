@@ -7,13 +7,14 @@ import SwiftUI
     }
 }
 struct HostView: View {
+    @State<Bool> private var showingHelp = false
     @ObservedObject var model: HostModel
     var body: some View {
         NavigationStack {
             Form {
                 Section {
                     Label(model.status, systemImage:model.streaming ? "waveform" : "antenna.radiowaves.left.and.right")
-                    Button(model.active ? "Stop Host" : "Start Host") {
+                    Button(model.active ? tr("Stop Host") : tr("Start Host")) {
                         if model.active { model.stopHost() } else { model.startHost() }
                     }.buttonStyle(.glassProminent).disabled(model.busy)
                     if !model.connectionAddress.isEmpty {
@@ -29,10 +30,10 @@ struct HostView: View {
                     ForEach(model.devices) { device in
                         VStack(alignment:.leading,spacing:6) {
                             Label(device.name,systemImage:"iphone")
-                            Text(device.ready ? "Clock synchronized" : "Synchronizing…").foregroundStyle(.secondary)
+                            Text(device.ready ? tr("Clock synchronized") : "Synchronizing…").foregroundStyle(.secondary)
                             if device.ready {
-                                Text(String(format:"RTT %.1f ms · Clock %+.1f ms",device.rtt * 1000,device.offset * 1000)).monospacedDigit()
-                                Text(String(format:"Clock uncertainty ≥ %.1f ms",(device.rtt / 2 + device.jitter) * 1000)).font(.caption)
+                                Text(String(format:tr("RTT %.1f ms · Clock %+.1f ms"),device.rtt * 1000,device.offset * 1000)).monospacedDigit()
+                                Text(String(format:tr("Clock uncertainty ≥ %.1f ms"),(device.rtt / 2 + device.jitter) * 1000)).font(.caption)
                             }
                         }
                     }
@@ -42,11 +43,11 @@ struct HostView: View {
                         Text("Synchronized • CoreAudio tap").tag(0)
                         Text("Monitor • ScreenCaptureKit").tag(1)
                     }.disabled(model.streaming || model.busy)
-                    LabeledContent("Format",value:"48 kHz · Stereo · Float32 PCM")
+                    LabeledContent("Format",value:tr("48 kHz · Stereo · Float32 PCM"))
                     LabeledContent("Shared buffer",value:String(format:"%.0f ms",model.latency * 1000))
                     if model.mode == 1 { Text("Monitor mode leaves the original Mac output audible. It cannot delay that output to match iPhone.").font(.caption).foregroundStyle(.secondary) }
                     HStack {
-                        Button(model.streaming ? "Stop Streaming" : "Start Streaming") {
+                        Button(model.streaming ? tr("Stop Streaming") : tr("Start Streaming")) {
                             Task { if model.streaming { await model.stopStreaming() } else { await model.startStreaming() } }
                         }.buttonStyle(.glassProminent)
                         if !model.streaming {
@@ -60,6 +61,10 @@ struct HostView: View {
                 }.font(.callout)
                 if let error = model.error { Section("Attention") { Text(error).foregroundStyle(.red).textSelection(.enabled) } }
             }.formStyle(.grouped).navigationTitle("MusicSync")
+            .toolbar { ToolbarItem(placement: .primaryAction) {
+                Button { showingHelp = true } label: { Label("Help", systemImage: "questionmark.circle") }
+            } }
+            .sheet(isPresented: $showingHelp) { HelpView() }
         }
     }
 }

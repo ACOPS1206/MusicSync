@@ -14,8 +14,8 @@ enum CaptureFailure: LocalizedError {
     case status(String, OSStatus), unavailable
     var errorDescription: String? {
         switch self {
-        case let .status(operation, code): return "\(operation): \(code). Check System Audio Recording permission."
-        case .unavailable: return "Audio source is unavailable."
+        case let .status(operation, code): return String(format: tr("%@: %d. Check System Audio Recording permission."), operation, code)
+        case .unavailable: return tr("Audio source is unavailable.")
         }
     }
 }
