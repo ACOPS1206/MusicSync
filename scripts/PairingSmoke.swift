@@ -76,6 +76,14 @@ struct SmokeFailure: Error { let message: String }
         let volumeCommand = try unwrap(first.last("setClientVolume"))
         var volumeAck = Message("volumeReport"); volumeAck.volume = 0.42; volumeAck.requestID = volumeCommand.requestID; first.peer.send(volumeAck)
         try await wait("volume acknowledgment") { host.devices.first(where: { $0.id == firstID })?.volume == 0.42 && host.devices.first(where: { $0.id == firstID })?.pendingVolume == nil }
+        host.setClientVolume(firstID,volume:0.5)
+        try await wait("first overlapping command") { first.last("setClientVolume")?.requestID != volumeCommand.requestID }
+        let earlierVolume = try unwrap(first.last("setClientVolume"))
+        host.setClientVolume(firstID,volume:0.65)
+        var earlierAck = Message("volumeReport"); earlierAck.volume = 0.5; earlierAck.requestID = earlierVolume.requestID; first.peer.send(earlierAck)
+        try await wait("newer queued volume survives old ack") { first.last("setClientVolume")?.volume == 0.65 }
+        var latestAck = Message("volumeReport"); latestAck.volume = 0.65; latestAck.requestID = first.last("setClientVolume")?.requestID; first.peer.send(latestAck)
+        try await wait("latest volume ack") { host.devices.first(where: { $0.id == firstID })?.volume == 0.65 && host.devices.first(where: { $0.id == firstID })?.pendingVolume == nil }
         host.setVolumePermissions(firstID,hostMayControlClient:false)
         let before = first.messages.filter { $0.kind == "setClientVolume" }.count
         host.setClientVolume(firstID,volume:0.8); try await Task.sleep(nanoseconds:150_000_000)
@@ -110,8 +118,8 @@ struct SmokeFailure: Error { let message: String }
         try await wait("acknowledged roster") { first.last("volumePeers")?.volumePeers?.contains(where: { $0.id == secondID && $0.volume == 0.25 }) == true }
         // Revoke during the 100 ms queue window; no second command may escape.
         let relayCount = second.messages.filter { $0.kind == "setClientVolume" }.count
-        relay.volume = 0.8; first.peer.send(relay)
-        try await wait("relay queued") { host.devices.first(where: { $0.id == secondID })?.pendingVolume == 0.8 }
+        host.setClientVolume(secondID,volume:0.8,requester:firstID)
+        try require(host.devices.first(where: { $0.id == secondID })?.pendingVolume == 0.8,"Relay must be queued before revocation")
         host.setVolumePermissions(firstID,clientMayControlPeers:false)
         try await Task.sleep(nanoseconds:150_000_000)
         try require(second.messages.filter { $0.kind == "setClientVolume" }.count == relayCount,"Permission revocation must cancel a queued relay")

@@ -428,7 +428,7 @@ struct NearbyMac: Identifiable {
     }
     func requestHostVolume(_ volume: Double) {
         guard paired, canControlHostVolume, let value = VolumeControl.valid(volume) else { return }
-        pendingHostVolume = value; hostVolumeTask?.cancel()
+        pendingHostVolume = value; hostVolumeRequestID = nil; hostVolumeTask?.cancel()
         let task = DispatchWorkItem { [weak self] in self?.sendHostVolume() }
         hostVolumeTask = task; DispatchQueue.main.asyncAfter(deadline:.now()+0.1,execute:task)
     }

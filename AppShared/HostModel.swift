@@ -247,10 +247,10 @@ struct ConnectedDevice: Identifiable {
             } else { var denied = Message("peerVolumeDenied"); denied.targetPeerID = message.targetPeerID; peer.send(denied) }
         } else if message.kind == "volumeReport", devices[index].supportsVolumeControl, let volume = VolumeControl.valid(message.volume) {
             devices[index].volume = volume
-            if message.requestID == devices[index].volumeRequestID { devices[index].pendingVolume = nil; devices[index].volumeRequestID = nil; devices[index].volumeRequester = nil }
+            if let request = message.requestID, request == devices[index].volumeRequestID { devices[index].pendingVolume = nil; devices[index].volumeRequestID = nil; devices[index].volumeRequester = nil }
             broadcastVolumePeers()
         } else if message.kind == "volumeResult", message.volumeTarget == "client", message.accepted == false {
-            if message.requestID == devices[index].volumeRequestID { notifyVolumeDenied(index); devices[index].pendingVolume = nil; devices[index].volumeRequestID = nil; devices[index].volumeRequester = nil; error = tr("The Client declined the volume change.") }
+            if let request = message.requestID, request == devices[index].volumeRequestID { notifyVolumeDenied(index); devices[index].pendingVolume = nil; devices[index].volumeRequestID = nil; devices[index].volumeRequester = nil; error = tr("The Client declined the volume change.") }
         } else if message.kind == "ping", let t1 = message.t1 {
             var response = Message("pong"); response.t1 = t1
             response.t2 = SyncClock.now; response.t3 = SyncClock.now; peer.send(response)
@@ -380,7 +380,7 @@ struct ConnectedDevice: Identifiable {
               devices[index].gate.approved, devices[index].supportsVolumeControl,
               requester.map({ permitsPeerVolume($0,target:id) }) ?? devices[index].permissions.hostMayControlClient else { return }
         if devices[index].volumeRequester != requester { notifyVolumeDenied(index) }
-        devices[index].volumeRequester = requester; devices[index].pendingVolume = value; volumeTasks[id]?.cancel()
+        devices[index].volumeRequester = requester; devices[index].pendingVolume = value; devices[index].volumeRequestID = nil; volumeTasks[id]?.cancel()
         let task = DispatchWorkItem { [weak self] in self?.sendClientVolume(id) }
         volumeTasks[id] = task; DispatchQueue.main.asyncAfter(deadline:.now()+0.1,execute:task)
     }
