@@ -7,6 +7,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 /** Written frame -> actual output time mapping supplied by each OS audio backend. */
 interface AudioSink : AutoCloseable {
     val latency: Double
+    val underruns: Int get()=0
     fun start()
     fun position(): Pair<Long,Double>?
     fun write(samples: FloatArray)
@@ -60,11 +61,16 @@ class ScheduledPlayer(private val factory: ()->AudioSink) : AutoCloseable {
                 var origin = Clock.now()+output.latency
                 var current: Block? = null; var index = 0
                 var nextStamp = 0.0
+                var previousUnderruns=0
                 while (active.get()) {
                     if (Clock.now() >= nextStamp) {
+                        output.latency.takeIf{it.isFinite()&&it in 0.0..2.0}?.let{outputLatency=it}
                         output.position()?.let { (frame, time) ->
                             origin = OutputTimeline.discipline(origin,frame,time,written)
                         }
+                        val underruns=output.underruns
+                        if(underruns>previousUnderruns)drops+=underruns-previousUnderruns
+                        previousUnderruns=underruns
                         nextStamp = Clock.now() + .1
                     }
                     val chunk = FloatArray(480*2)

@@ -33,6 +33,28 @@ class CoreTest {
         q.insert(m);assertTrue(q.take(10.0,0.0).isEmpty())
         assertEquals(1,q.take(10.0,0.0,.3).size)
     }
+    @Test fun senderCongestionKeepsFreshAudioAndControlWithoutClosing(){
+        val q=SendBacklog(audioBudget=60,hardBudget=200,capacity=5)
+        assertTrue(q.offer(ByteArray(30){1},true));assertTrue(q.offer(ByteArray(30){2},true))
+        assertTrue(q.offer(ByteArray(30){3},true));assertEquals(1,q.discardedAudio)
+        assertTrue(q.offer(byteArrayOf(9),false))
+        assertContentEquals(ByteArray(30){2},q.take());assertContentEquals(ByteArray(30){3},q.take())
+        assertContentEquals(byteArrayOf(9),q.take())
+        repeat(100){assertTrue(q.offer(ByteArray(30){it.toByte()},true))}
+        assertTrue(q.queuedBytes<=60);assertTrue(q.discardedAudio>=99)
+        q.close();assertEquals(0,q.queuedBytes);assertTrue(q.take().isEmpty())
+    }
+    @Test fun sequenceGapsTriggerAdaptiveDropAccounting(){
+        val q=JitterBuffer()
+        fun packet(seq:Long)=Message("audio",sequence=seq,epoch=1,pts=10.05+seq*.01,sampleRate=48000.0,channels=2,frames=1,payload=Wire.payload(floatArrayOf(0f,0f)))
+        q.insert(packet(0));q.insert(packet(3));assertEquals(2,q.take(10.0,0.0).size);assertEquals(2,q.drops)
+    }
+    @Test fun socketDiagnosticsExposePhaseAndOsReasonWithoutParserSecrets(){
+        val text=TransportDiagnostics.describe(IOException("wrapped",SocketException("Connection reset")),"TLS read")
+        assertTrue(text.contains("TLS read"));assertTrue(text.contains("Connection reset"))
+        val safe=TransportDiagnostics.describe(IllegalArgumentException("pairingSecret=DO_NOT_LOG"),"TLS read")
+        assertFalse(safe.contains("DO_NOT_LOG"));assertTrue(safe.contains("IllegalArgumentException"))
+    }
     @Test fun tlsExporterPinsAndProof(){
         val store=MemoryStore();val identity=Identity(store);assertEquals(Pairing.pin(identity.cert),Pairing.pin(Identity(store).cert))
         val listener=ServerSocket(0);val serverResult=CompletableFuture<SecurePeer>()

@@ -13,7 +13,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Rpm)
             packageName = "MusicSync"
-            packageVersion = "0.9.1"
+            packageVersion = "0.9.2"
             description = "MusicSync LAN synchronized speakers"
             vendor = "ACOPS1206"
             modules("java.desktop", "java.logging", "java.naming", "jdk.crypto.ec", "jdk.unsupported")

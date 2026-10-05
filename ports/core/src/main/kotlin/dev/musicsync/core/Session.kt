@@ -56,7 +56,7 @@ class Session(val platform: Platform, private val discoveryEnabled: Boolean = tr
     private val player = ScheduledPlayer { platform.sink() }
     private val discovery = Discovery({ found -> post { snapshot=snapshot.copy(nearby=found.filter { it.port != server?.localPort }); publish() } },{ reason -> post { log("Bonjour: $reason"); snapshot=snapshot.copy(error=reason); publish() } })
     init {
-        log("MusicSync 0.9.0 (12) · ${platform.name}")
+        log("MusicSync 0.9.2 (14) · ${platform.name}")
         if (discoveryEnabled) discovery.start()
         executor.scheduleAtFixedRate({ runCatching { tick() }.onFailure { fail(it) } },0,10,TimeUnit.MILLISECONDS)
     }
@@ -91,7 +91,7 @@ class Session(val platform: Platform, private val discoveryEnabled: Boolean = tr
                     try { val peer=SecurePeer.server(socket,identity!!); post {
                         if(server !== listener || devices.size>=16){peer.close();return@post}
                         val d=Device(peer); devices[peer.id]=d
-                        peer.onMessage={m->post{handleHost(d,m)}};peer.onClose={_->post{devices.remove(peer.id);log("Client disconnected");publish()}}
+                        peer.onMessage={m->post{handleHost(d,m)}};peer.onClose={reason->post{devices.remove(peer.id);log("Client disconnected: $reason");publish()}}
                         peer.start(); log("TLS 1.3 Client connected"); publish()
                         executor.schedule({ if(!d.approved){d.peer.send(Message("pairRejected"));d.peer.close()} },60,TimeUnit.SECONDS)
                     } } catch (_: Exception) { runCatching { socket.close() }; post { log("TLS handshake failed") } }
@@ -130,7 +130,7 @@ class Session(val platform: Platform, private val discoveryEnabled: Boolean = tr
                     log("TLS 1.3 Host connected");publish()
                 }
             } catch(e:Exception) {
-                runCatching{socket?.close()};post{if(token==generation) { if(e.message?.contains("key changed")==true){ wantsConnection=false;fail(e) }else lost(e.javaClass.simpleName) }}
+                runCatching{socket?.close()};post{if(token==generation) { if(e.message?.contains("key changed")==true){ wantsConnection=false;fail(e) }else lost(TransportDiagnostics.describe(e,"TLS connect")) }}
             }
         }
     }
@@ -314,7 +314,7 @@ class Session(val platform: Platform, private val discoveryEnabled: Boolean = tr
         if(player.failure.isNotEmpty()&&snapshot.error!=player.failure){snapshot=snapshot.copy(error=player.failure);log("Audio output failed: ${player.failure}")}
         if(snapshot.paired){
             if(now-lastReport>=.1){pingCount++;if(pingCount<=16||pingCount%10==0){pings.removeIf{now-it>3};pings.add(now);client?.send(Message("ping",t1=now))};lastReport=now}
-            if(now-lastPong>5){lost("Host clock timed out");return}
+            if(now-lastPong>10){lost("Host clock timed out");return}
             if(clock.ready){buffer.take(now,clock.offset,max(.13,player.outputLatency+.08)).forEach{player.schedule(it.samples(),it.pts!!-clock.offset)}
                 if(now-lastPublish>=.25){
                     val drops=buffer.drops+player.drops
@@ -335,6 +335,7 @@ class Session(val platform: Platform, private val discoveryEnabled: Boolean = tr
         publishIfDue()
     }
     private fun publishIfDue(){val now=Clock.now();if(now-lastPublish>=.25){lastPublish=now;publish()}}
+    fun diagnostic(message:String)=post{log(message);publish()}
     fun clearLogs()=post{synchronized(logs){logs.clear()};publish()}
     override fun close(){post{disconnectInternal();stopHostInternal();discovery.close();executor.shutdown();io.shutdownNow()}}
     companion object {

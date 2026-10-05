@@ -41,18 +41,59 @@ class AndroidPlatform(private val context:Context):Platform {
 }
 class AndroidSink:AudioSink {
     private var track:AudioTrack?=null
+    private var owner:Thread?=null
+    @Volatile private var stopped=false
+    @Volatile private var bufferFrames=2880
+    @Volatile private var observedUnderruns=0
     private val timestamp=AudioTimestamp()
-    override val latency=.04
+    override val latency get()=bufferFrames/48000.0
+    override val underruns get()=observedUnderruns
     override fun start(){
+        owner=Thread.currentThread()
+        runCatching{Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)}
         val min=AudioTrack.getMinBufferSize(48000,AudioFormat.CHANNEL_OUT_STEREO,AudioFormat.ENCODING_PCM_FLOAT)
-        require(min>0)
-        track=AudioTrack.Builder().setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).setAllowedCapturePolicy(AudioAttributes.ALLOW_CAPTURE_BY_NONE).build())
+        require(min>0){"48 kHz float stereo output is unavailable: $min"}
+        val minimumFrames=(min+7)/8
+        val output=AudioTrack.Builder().setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).setAllowedCapturePolicy(AudioAttributes.ALLOW_CAPTURE_BY_NONE).build())
             .setAudioFormat(AudioFormat.Builder().setSampleRate(48000).setChannelMask(AudioFormat.CHANNEL_OUT_STEREO).setEncoding(AudioFormat.ENCODING_PCM_FLOAT).build())
-            .setBufferSizeInBytes(maxOf(min,480*8*4)).setTransferMode(AudioTrack.MODE_STREAM).setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY).build().also{check(it.state==AudioTrack.STATE_INITIALIZED);it.play()}
+            .setBufferSizeInBytes(maxOf(min*2,5760*8)).setTransferMode(AudioTrack.MODE_STREAM).setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY).build()
+        check(output.state==AudioTrack.STATE_INITIALIZED){"AudioTrack initialization failed"}
+        track=output
+        output.setBufferSizeInFrames(maxOf(minimumFrames,2880))
+        bufferFrames=output.bufferSizeInFrames
+        if(!stopped)output.play()
     }
-    override fun position():Pair<Long,Double>?=track?.let{if(it.getTimestamp(timestamp)&&timestamp.framePosition>0)timestamp.framePosition to timestamp.nanoTime/1e9 else null}
-    override fun write(samples:FloatArray){val output=track?:return;var offset=0;while(offset<samples.size){val n=output.write(samples,offset,samples.size-offset,AudioTrack.WRITE_BLOCKING);check(n>0){"AudioTrack write failed: $n"};offset+=n}}
-    override fun close(){val output=track;track=null;runCatching{output?.pause();output?.flush();output?.release()}}
+    override fun position():Pair<Long,Double>? {
+        val output=track?:return null
+        if(stopped)return null
+        val count=output.underrunCount
+        if(count>observedUnderruns){
+            // Grow only the app's effective buffer, bounded by the reserved capacity.
+            output.setBufferSizeInFrames(minOf(output.bufferCapacityInFrames,output.bufferSizeInFrames+960))
+        }
+        observedUnderruns=count
+        bufferFrames=output.bufferSizeInFrames
+        if(!output.getTimestamp(timestamp)||timestamp.framePosition<=0)return null
+        val time=timestamp.nanoTime/1e9
+        if(time<Clock.now()-.5||time>Clock.now()+.05)return null
+        return timestamp.framePosition to time
+    }
+    override fun write(samples:FloatArray){
+        val output=track?:return
+        var offset=0
+        while(offset<samples.size&&!stopped){
+            val n=output.write(samples,offset,samples.size-offset,AudioTrack.WRITE_BLOCKING)
+            if(n<=0){if(stopped)return;error("AudioTrack write failed: $n; underruns=$observedUnderruns; buffer=$bufferFrames frames")}
+            offset+=n
+        }
+    }
+    @Synchronized override fun close(){
+        stopped=true
+        val output=track?:return
+        runCatching{output.pause()}
+        // UI cancellation interrupts blocking writes; the audio owner releases the handle.
+        if(Thread.currentThread()===owner){track=null;runCatching{output.flush();output.release()}}
+    }
 }
 class AndroidCapture(projection:MediaProjection):AudioSource {
     override val monitor=true

@@ -12,6 +12,10 @@ import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.net.Socket
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import java.math.BigInteger
 import java.security.*
 import java.security.spec.*
@@ -76,15 +80,14 @@ class Identity(store: Store) {
 class SecurePeer private constructor(val socket: Socket, private val protocol: TlsProtocol, val binding: String, val code: String, val pin: String?) : AutoCloseable {
     val id: String = UUID.randomUUID().toString().uppercase()
     private val closed = AtomicBoolean(false)
-    private val queue = ArrayBlockingQueue<ByteArray>(128)
-    private val bytes = AtomicInteger()
+    private val outbox = SendBacklog()
     var onMessage: (Message)->Unit = {}
     var onClose: (String)->Unit = {}
     fun start() {
         thread("MusicSync TLS write") {
             while (!closed.get()) {
-                val data = queue.take()
-                bytes.addAndGet(-data.size)
+                val data = outbox.take()
+                if(data.isEmpty())break
                 protocol.outputStream.write(data); protocol.outputStream.flush()
             }
         }
@@ -93,14 +96,14 @@ class SecurePeer private constructor(val socket: Socket, private val protocol: T
     fun send(m: Message) {
         if (closed.get()) return
         val data = Wire.encode(m)
-        if (bytes.addAndGet(data.size) > 512*1024 || !queue.offer(data)) end("Slow receiver; reconnecting")
+        if (!outbox.offer(data,m.kind=="audio")) end("Control send backlog exceeded; reconnecting")
     }
     private fun thread(name: String, action: ()->Unit) = kotlin.concurrent.thread(name=name,isDaemon=true) {
-        try { action() } catch (e: Exception) { end(e.javaClass.simpleName) }
+        try { action() } catch (e: Exception) { end(TransportDiagnostics.describe(e,name)) }
     }
     private fun end(reason: String) {
         if (closed.compareAndSet(false,true)) {
-            runCatching { socket.close() }; queue.offer(ByteArray(0)); onClose(reason)
+            runCatching { socket.close() }; outbox.close(); onClose(reason)
         }
     }
     override fun close() { end("Disconnected") }
@@ -143,5 +146,48 @@ class SecurePeer private constructor(val socket: Socket, private val protocol: T
             require(binding.size == 32); socket.soTimeout = 0
             return SecurePeer(socket,protocol,Base64.getEncoder().encodeToString(binding),Pairing.code(binding),null)
         }
+    }
+}
+
+/** Bounded TLS backlog: discard old audio before it becomes late; preserve control frames. */
+internal class SendBacklog(private val audioBudget:Int=96*1024,private val hardBudget:Int=512*1024,private val capacity:Int=128) {
+    private data class Entry(val bytes:ByteArray,val audio:Boolean)
+    private val lock=ReentrantLock();private val ready=lock.newCondition()
+    private val queue=ArrayDeque<Entry>();private var size=0;private var closed=false
+    var discardedAudio=0;private set
+    val queuedBytes get()=lock.withLock{size}
+    private fun discardAudio():Boolean {
+        val iterator=queue.iterator()
+        while(iterator.hasNext()){val entry=iterator.next();if(entry.audio){iterator.remove();size-=entry.bytes.size;discardedAudio++;return true}}
+        return false
+    }
+    fun offer(bytes:ByteArray,audio:Boolean):Boolean=lock.withLock{
+        if(closed)return false
+        val budget=if(audio)audioBudget else hardBudget
+        while(size+bytes.size>budget||queue.size>=capacity){
+            if(!discardAudio()){if(audio){discardedAudio++;return true}else return false}
+        }
+        queue.addLast(Entry(bytes,audio));size+=bytes.size;ready.signal();true
+    }
+    fun take():ByteArray=lock.withLock{
+        while(queue.isEmpty()&&!closed)ready.await()
+        val entry=queue.pollFirst()?:return ByteArray(0)
+        size-=entry.bytes.size;entry.bytes
+    }
+    fun close()=lock.withLock{closed=true;queue.clear();size=0;ready.signalAll()}
+}
+object TransportDiagnostics {
+    fun describe(error:Throwable,phase:String):String {
+        var cause:Throwable?=error
+        repeat(5){
+            val found=cause
+            if(found is SocketException||found is SocketTimeoutException){
+                val detail=found!!.message?.replace('\n',' ')?.take(100)?:"no OS detail"
+                return "$phase: ${found.javaClass.simpleName}: $detail"
+            }
+            cause=found?.cause
+        }
+        // Parser/TLS errors can contain credentials in their message. Never echo raw data.
+        return "$phase: ${error.javaClass.simpleName}"
     }
 }

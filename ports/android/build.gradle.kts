@@ -6,8 +6,8 @@ android {
         applicationId = "dev.musicsync.android"
         minSdk = 29
         targetSdk = 36
-        versionCode = 13
-        versionName = "0.9.1"
+        versionCode = 14
+        versionName = "0.9.2"
     }
     sourceSets["main"].java.srcDir("../ui")
     buildFeatures { compose = true; buildConfig = true }
