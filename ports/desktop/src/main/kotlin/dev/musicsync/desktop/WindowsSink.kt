@@ -57,11 +57,11 @@ class WindowsSink : AudioSink {
             if(!synchronized(lock){stopped})error(failure())
         }
     }
-    override fun close()=synchronized(lock){
+    override fun close(){synchronized(lock){
         stopped=true
         pointer?.let{value->
             library.ms_render_stop(value)
             if(Thread.currentThread()===owner){library.ms_render_dispose(value);pointer=null}
         }
-    }
+    }}
 }
