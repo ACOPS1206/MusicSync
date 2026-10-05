@@ -78,3 +78,5 @@ From GitHub **Actions → Build MusicSync web → successful run → Artifacts**
 - Gateway pairing storage uses OS file permissions, not a hardware keychain; protect the computer/account. An invitation holder is trusted to request native pairings. Do not expose this gateway to the Internet.
 
 Dependencies: `ws` (MIT), `bonjour-service` (MIT); transitive packages retain their licenses in `node_modules`. Playwright (Apache-2.0) is test-only. MusicSync source remains MIT, with copyright/license notices preserved when redistributed.
+
+Only one tab per browser profile may connect at once; open a different browser profile for another independent client. This prevents duplicate device identities from repeatedly replacing each other. Native connection loss reconnects automatically after established pairing; initial failures are capped at three retries.

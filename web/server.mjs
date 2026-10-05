@@ -14,7 +14,7 @@ const dir=resolve(process.env.MUSICSYNC_WEB_DATA||'.local');mkdirSync(dir,{recur
 const pairsPath=resolve(dir,'pairings.json');
 let pairs=existsSync(pairsPath)?JSON.parse(readFileSync(pairsPath,'utf8')):{};
 const save=()=>writeFileSync(pairsPath,JSON.stringify(pairs),{mode:0o600});
-const invite=randomBytes(32).toString('base64url'), sessions=new Set(), targets=new Map();
+const invite=randomBytes(32).toString('base64url'), sessions=new Set(), targets=new Map(), activeIDs=new Map();
 const lanIP=Object.values(networkInterfaces()).flat().find(x=>x?.family==='IPv4'&&!x.internal)?.address||'127.0.0.1';
 const port=Number(process.env.PORT||8443), bind=process.env.MUSICSYNC_WEB_BIND||'0.0.0.0';
 const staticFiles={'/':['index.html','text/html'], '/app.mjs':['app.mjs','text/javascript'],'/sync.mjs':['sync.mjs','text/javascript'],'/style.css':['style.css','text/css']};
@@ -60,7 +60,7 @@ wss.on('connection',ws=>{
     const m=JSON.parse(data);if(m.kind==='connect'){
       if(socket)throw Error('Disconnect before changing host');endpoint=targets.get(m.target);
       if(!endpoint||!uuid(m.deviceID))throw Error('Select a discovered LAN host');
-      clientID=m.deviceID.toUpperCase();paired=false;confirmed=false;proved=false;hostID=undefined;
+      clientID=m.deviceID.toUpperCase();if(activeIDs.has(clientID)&&activeIDs.get(clientID)!==ws)throw Error('This browser profile is connected in another tab. Disconnect that tab first.');activeIDs.set(clientID,ws);paired=false;confirmed=false;proved=false;hostID=undefined;
       const key=`${clientID}|${endpoint.id}`;const record=pairs[key];
       socket=tls.connect({host:endpoint.host,port:endpoint.port,rejectUnauthorized:false,minVersion:'TLSv1.3',maxVersion:'TLSv1.3'});
       socket.setNoDelay(true);const connection=socket,framer=new Framer();
@@ -92,7 +92,7 @@ wss.on('connection',ws=>{
     else if(m.kind==='pairConfirm'){if(!socket||!localCode||paired)throw Error('No pending pairing');confirmed=true;native({kind:'pairConfirm',pairingCode:localCode})}
     else if(paired&&allowed.has(m.kind)){native({...m,version:1})}
   }catch(e){end(e.message)}});
-  ws.on('close',()=>{clearInterval(limiter);clearTimeout(deadline);socket?.destroy()});ws.on('error',()=>socket?.destroy());
+  ws.on('close',()=>{if(activeIDs.get(clientID)===ws)activeIDs.delete(clientID);clearInterval(limiter);clearTimeout(deadline);socket?.destroy()});ws.on('error',()=>socket?.destroy());
 });
 server.listen(port,bind,()=>{
   console.log(`MusicSync Web: https://${lanIP}:${port}/#${invite}`);

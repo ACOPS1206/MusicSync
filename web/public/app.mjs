@@ -9,6 +9,15 @@ let ws,context,player,paired=false,wants=false,established=false,target='',phase
 let deviceID=localStorage.getItem('musicsync.deviceID');if(!deviceID){deviceID=crypto.randomUUID().toUpperCase();localStorage.setItem('musicsync.deviceID',deviceID)}
 const logs=[];
 function log(text){logs.push(`${new Date().toLocaleTimeString()} ${text}`);if(logs.length>100)logs.shift();$('logs').textContent=logs.join('\n')}
+const reasons={
+ 'Host key changed. Verify host; remove pairing in gateway before retrying.':'호스트의 보안 키가 바뀌었습니다. 호스트를 확인한 후 게이트웨이에서 이전 페어링을 삭제하세요.',
+ 'Host declined or expired pairing':'호스트가 페어링을 거절했거나 승인 시간이 만료되었습니다.',
+ 'Pairing timed out; reconnect to request approval':'페어링 시간이 만료되었습니다. 다시 연결하여 승인을 요청하세요.',
+ 'Pairing code mismatch':'페어링 코드가 다릅니다. 연결을 끊고 양쪽 기기를 확인하세요.',
+ 'LAN host connection failed':'LAN 호스트 연결에 실패했습니다.',
+ 'This browser profile is connected in another tab. Disconnect that tab first.':'이 브라우저는 다른 탭에서 연결 중입니다. 그 탭의 연결을 먼저 해제하세요.'
+};
+function reason(text){return language==='ko'?(reasons[text]||text):text}
 function error(text){$('error').textContent=text;$('error').hidden=!text;if(text)log(text)}
 function send(m){if(ws?.readyState===WebSocket.OPEN)ws.send(JSON.stringify({version:1,...m}))}
 function channel(){return $('channel').value==='automatic'?hostChannel:$('channel').value}
@@ -36,8 +45,8 @@ function open(){if(connecting)return;connecting=true;reset();phase='connecting';
   ws.onclose=()=>{if(ws!==current)return;connecting=false;reset();phase='ended';render();retry()};
 }
 function handle(m){
-  if(m.kind==='transportNotice'){log(m.reason);return}
-  if(m.kind==='gatewayError'){wants=false;error(m.reason);ws.close();return}
+  if(m.kind==='transportNotice'){log(reason(m.reason));return}
+  if(m.kind==='gatewayError'){wants=false;error(reason(m.reason));ws.close();return}
   if(m.kind==='disconnected'){ws.close();return}
   if(m.kind==='pairPending'){phase='pairing';$('code').textContent=m.pairingCode;$('pairing').hidden=false;$('confirm').disabled=false;$('address').textContent=`${m.name||''} · ${m.hostAddress||''}`;render();log(tr('pairing'));return}
   if(m.kind==='pairApproved'){paired=true;established=true;attempt=0;phase='syncing';start=now();lastPong=now();$('pairing').hidden=true;$('address').textContent=`${m.name||''} · ${m.hostAddress||''}`;hostChannel=m.outputChannel||'stereo';policyApply(m);report();send({kind:'volumeReport',volume:Number($('volume').value)});log(tr('approved'));render();return}
