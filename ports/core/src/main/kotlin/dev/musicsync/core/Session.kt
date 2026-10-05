@@ -10,7 +10,7 @@ import java.util.concurrent.*
 import kotlin.math.*
 
 data class DeviceView(val id: String, val name: String, val approved: Boolean, val code: String?, val confirmed: Boolean,
-    val channel: String, val selection: String, val state: String, val rtt: Double, val volume: Double, val policy: Permissions)
+    val channel: String, val selection: String, val state: String, val rtt: Double, val volume: Double, val volumeScope: String, val policy: Permissions)
 data class Snapshot(val role: String = "Listen", val phase: String = "Ready", val nearby: List<Nearby> = emptyList(),
     val hostActive: Boolean = false, val streaming: Boolean = false, val connected: Boolean = false, val paired: Boolean = false,
     val code: String = "", val confirmed: Boolean = false, val hostName: String = "", val address: String = "",
@@ -66,7 +66,7 @@ class Session(val platform: Platform, private val discoveryEnabled: Boolean = tr
         synchronized(logs) { logs.addLast("${java.time.LocalTime.now().withNano(0)} ${text.replace('\n',' ').take(200)}"); while(logs.size>300)logs.removeFirst() }
     }
     private fun publish() {
-        snapshot = snapshot.copy(devices=devices.values.map { DeviceView(it.peer.id,it.name,it.approved,if(it.pending)it.peer.code else null,it.confirmed,it.channel,it.selection,it.state,it.rtt,it.volume,it.policy) },
+        snapshot = snapshot.copy(devices=devices.values.map { DeviceView(it.peer.id,it.name,it.approved,if(it.pending)it.peer.code else null,it.confirmed,it.channel,it.selection,it.state,it.rtt,it.volume,it.scope,it.policy) },
             channel=effectiveChannel(),selection=channelSelection,outputLatency=player.outputLatency,buffer=buffer.size,
             drops=buffer.drops+player.drops,scheduleError=player.error,latency=latency,logs=synchronized(logs){logs.toList()})
         mutable.value = snapshot
@@ -302,7 +302,7 @@ class Session(val platform: Platform, private val discoveryEnabled: Boolean = tr
                     if(!input.monitor)player.schedule(samples,m.pts!!)
                     totalBytes+=samples.size*4
                 }}
-                post{if(sourceGeneration==token)stopStreamingInternal();publish()};input.close()
+                post{executor.schedule({if(sourceGeneration==token){stopStreamingInternal();publish()}},((latency+.25)*1000).toLong(),TimeUnit.MILLISECONDS)};input.close()
             }catch(e:Exception){post{if(sourceGeneration==token){stopStreamingInternal();fail(e)}}}
         }
     }
@@ -310,6 +310,7 @@ class Session(val platform: Platform, private val discoveryEnabled: Boolean = tr
     private fun stopStreamingInternal(){sourceGeneration++;runCatching{source?.close()};source=null;player.close();devices.values.filter{it.approved}.forEach{it.peer.send(Message("stop"))};snapshot=snapshot.copy(streaming=false,monitor=false,phase=if(server!=null)"Hosting"else"Ready")}
     private fun tick(){
         val now=Clock.now()
+        if(player.failure.isNotEmpty()&&snapshot.error!=player.failure){snapshot=snapshot.copy(error=player.failure);log("Audio output failed: ${player.failure}")}
         if(snapshot.paired){
             if(now-lastReport>=.1){pingCount++;if(pingCount<=16||pingCount%10==0){pings.removeIf{now-it>3};pings.add(now);client?.send(Message("ping",t1=now))};lastReport=now}
             if(now-lastPong>5){lost("Host clock timed out");return}

@@ -37,12 +37,14 @@ class ScheduledPlayer(private val factory: ()->AudioSink) : AutoCloseable {
     @Volatile var channel = "stereo"
     @Volatile var calibration = 0.0
     @Volatile var error = 0.0; private set
+    @Volatile var failure = ""; private set
     @Volatile var drops = 0; private set
     @Volatile var outputLatency = .04; private set
     private var worker: Thread? = null
     private var sink: AudioSink? = null
     @Synchronized fun schedule(samples: FloatArray, at: Double) {
         if (!at.isFinite()) return
+        if(failure.isNotEmpty()){drops++;return}
         if (!active.get()) start()
         if (blocks.size >= 100) { blocks.poll(); drops++ }
         blocks.add(Block(at + calibration,samples.copyOf()))
@@ -94,7 +96,7 @@ class ScheduledPlayer(private val factory: ()->AudioSink) : AutoCloseable {
                     }
                     output.write(chunk); written += 480
                 }
-            } catch (_: Exception) { drops++ } finally { active.set(false); runCatching { output?.close() }; sink = null }
+            } catch (e: Exception) { drops++; failure=e.message?.take(160)?:e.javaClass.simpleName } finally { active.set(false); runCatching { output?.close() }; sink = null }
         }
     }
     fun identify() {
@@ -107,6 +109,6 @@ class ScheduledPlayer(private val factory: ()->AudioSink) : AutoCloseable {
         schedule(samples,Clock.now()+.15)
     }
     override fun close() {
-        active.set(false); runCatching { sink?.close() }; worker?.join(500); synchronized(this) { blocks.clear() }; worker = null
+        active.set(false); runCatching { sink?.close() }; worker?.join(500); synchronized(this) { blocks.clear() }; worker = null; failure=""
     }
 }

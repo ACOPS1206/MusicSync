@@ -107,6 +107,7 @@ private val korean = mapOf(
                                 Text("${t(d.channel)} · ${t(d.state)} · RTT %.1f ms".format(d.rtt*1000),style=MaterialTheme.typography.bodySmall)
                                 Channels(d.selection,enabled=true,t=::t){session.setDeviceChannel(d.id,it)}
                                 OutlinedButton(onClick={session.identifyDevice(d.id)}){Text(t("Identify device"))}
+                                Text(t(if(d.volumeScope=="system")"System volume"else"MusicSync playback gain"),style=MaterialTheme.typography.labelSmall)
                                 VolumeSlider(d.volume,enabled=d.policy.hostMayControlClient,t=::t){session.setDeviceVolume(d.id,it)}
                                 var permissions by remember(d.id){mutableStateOf(false)}
                                 TextButton(onClick={permissions=!permissions}){Text(t("Device permissions"))}
@@ -127,6 +128,7 @@ private val korean = mapOf(
                             Text(peer.name,style=MaterialTheme.typography.titleMedium);Text("${t(peer.outputChannel?:"stereo")} · ${t(peer.playbackState?:"Waiting")}",style=MaterialTheme.typography.bodySmall)
                             Channels(peer.channelSelection?:"automatic",peer.canControlDevice==true,::t){session.peerChannel(peer.id,it)}
                             OutlinedButton(onClick={session.identifyPeer(peer.id)},enabled=peer.canControlDevice==true){Text(t("Identify device"))}
+                            Text(t(if(peer.volumeScope=="system")"System volume"else"MusicSync playback gain"),style=MaterialTheme.typography.labelSmall)
                             VolumeSlider(peer.volume,peer.canControl,::t){session.setPeerVolume(peer.id,it)};HorizontalDivider()
                         }};Text(t("Permissions are managed by the Host."),style=MaterialTheme.typography.bodySmall)
                     }}

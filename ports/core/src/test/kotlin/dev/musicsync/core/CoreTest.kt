@@ -59,7 +59,7 @@ class CoreTest {
         session.approve(device);assertNotNull(receive("pairApproved").pairingSecret)
         peer.send(Message("setHostVolume",volume=.4,requestID="denied"));assertEquals(false,receive("volumeResult").accepted)
         session.setPermissions(device,Permissions(clientMayControlHost=true));receive("volumePolicy")
-        peer.send(Message("setHostVolume",volume=.4,requestID="accepted"));assertEquals(true,receive("volumeResult").accepted);assertEquals(.4,session.state.value.volume)
+        peer.send(Message("setHostVolume",volume=.4,requestID="accepted"));assertEquals(true,receive("volumeResult").accepted);waitFor{session.state.value.volume==.4};assertEquals(.4,session.state.value.volume)
         peer.close();session.close()
     }
 }
