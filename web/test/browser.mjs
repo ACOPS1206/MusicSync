@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Actual HTTPS -> WSS -> native TLS -> PCM -> browser AudioBufferSource integration.
 import {spawn,execFileSync} from 'node:child_process';
-import {mkdtempSync,writeFileSync,readFileSync,rmSync} from 'node:fs';
+import {mkdtempSync,writeFileSync,readFileSync,rmSync,existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import tls from 'node:tls';
@@ -18,6 +18,8 @@ const clock=()=>Number(process.hrtime.bigint())/1e9;
 try{
   execFileSync(process.execPath,['setup.mjs'],{cwd,env:{...process.env,MUSICSYNC_WEB_DATA:dir},stdio:'pipe'});
   execFileSync('openssl',['req','-x509','-newkey','ec','-pkeyopt','ec_paramgen_curve:P-256','-nodes','-keyout',join(dir,'native.key'),'-out',join(dir,'native.crt'),'-days','1','-subj','/CN=Native test Host'],{stdio:'pipe'});
+  // Old persisted records must be removed, even if malformed.
+  writeFileSync(join(dir,'pairings.json'),'legacy records are not loaded');
   let fixtureReady=false;
   if(!process.env.MUSICSYNC_WEB_EXTERNAL_HOST){
     host=tls.createServer({key:readFileSync(join(dir,'native.key')),cert:readFileSync(join(dir,'native.crt')),minVersion:'TLSv1.3',maxVersion:'TLSv1.3'},socket=>{
@@ -44,6 +46,7 @@ try{
   gateway=spawn(process.execPath,['server.mjs'],{cwd,env:{...process.env,PORT:'18443',MUSICSYNC_WEB_BIND:'127.0.0.1',MUSICSYNC_WEB_DATA:dir,MUSICSYNC_WEB_TEST_TARGET:endpoint},stdio:['ignore','pipe','pipe']});
   let text='',errors='';gateway.stderr.on('data',x=>errors+=x);
   await new Promise((res,rej)=>{const timer=setTimeout(()=>rej(Error(`Gateway not ready ${errors}`)),15000);gateway.on('exit',x=>rej(Error(`Gateway exited ${x}: ${errors}`)));gateway.stdout.on('data',data=>{text+=data;const found=text.match(/Local: (https:\/\/localhost:\d+\/#\S+)/);if(found){invite=found[1];clearTimeout(timer);res()}})});
+  assert.equal(existsSync(join(dir,'pairings.json')),false);
   browser=await chromium.launch({headless:true,args:['--autoplay-policy=no-user-gesture-required']});
   const ctx=await browser.newContext({ignoreHTTPSErrors:true,locale:'en-US'});page=await ctx.newPage();let pageErrors=[];page.on('pageerror',e=>pageErrors.push(e.message));
   await page.addInitScript(()=>{
@@ -70,15 +73,21 @@ try{
     await page.waitForFunction(()=>document.querySelector('#phase').textContent.includes('재연결'));
     await page.waitForFunction(()=>document.querySelector('#title').textContent.includes('스트리밍 중'));
     await page.click('#disconnect');await page.waitForTimeout(200);await page.click('#connect');await page.waitForFunction(()=>document.querySelector('#title').textContent.includes('스트리밍 중'));assert.equal(await page.locator('#pairing').isVisible(),false);assert.equal(confirmation,1);assert.ok(approved>=3);assert.ok(connections>=3);
-    const tab=await ctx.newPage();await tab.goto('https://localhost:18443/');await tab.waitForSelector('#access',{state:'hidden'});await tab.click('#connect');await tab.waitForFunction(()=>document.querySelector('#error').textContent.includes('다른 탭'));await tab.close();
+    const tab=await ctx.newPage();await tab.goto('https://localhost:18443/');await tab.waitForSelector('#access',{state:'hidden'});await tab.click('#connect');await tab.waitForSelector('#pairing',{state:'visible'});assert.equal(await tab.locator('#error').textContent(),'');await tab.close();
     await page.screenshot({path:join(cwd,'test','web-preview.png'),fullPage:true});
     await page.click('#disconnect');await page.waitForTimeout(200);
-    // Persisted pin mismatch must not silently trust a replacement host certificate.
+    // Same-session pin mismatch must not silently trust a replacement host certificate.
     await new Promise(r=>host.close(r));
     execFileSync('openssl',['req','-x509','-newkey','ec','-pkeyopt','ec_paramgen_curve:P-256','-nodes','-keyout',join(dir,'changed.key'),'-out',join(dir,'changed.crt'),'-days','1','-subj','/CN=Changed test Host'],{stdio:'pipe'});
-    host=tls.createServer({key:readFileSync(join(dir,'changed.key')),cert:readFileSync(join(dir,'changed.crt')),minVersion:'TLSv1.3'},s=>s.on('error',()=>{}));await new Promise(r=>host.listen(Number(endpoint.split(':')[1]),'127.0.0.1',r));
+    host=tls.createServer({key:readFileSync(join(dir,'changed.key')),cert:readFileSync(join(dir,'changed.crt')),minVersion:'TLSv1.3'},socket=>{socket.on('error',()=>{});const f=new Framer(),binding=socket.exportKeyingMaterial(32,'EXPORTER-MusicSync-pairing-v2');socket.on('data',bytes=>{for(const m of f.consume(bytes)){if(m.kind==='hello')socket.write(encode({kind:'pairChallenge',hostID,nonce:randomUUID().toUpperCase(),pairingVersion:2}));else if(m.kind==='pairRequest')socket.write(encode({kind:'pairPending',hostID,pairingCode:code(binding)}));else if(m.kind==='pairConfirm'){assert.equal(m.pairingCode,code(binding));socket.write(encode({kind:'pairApproved',hostID,pairingSecret:secret,name:'Replacement Host'}))}}})});await new Promise(r=>host.listen(Number(endpoint.split(':')[1]),'127.0.0.1',r));
     await page.click('#connect');await page.waitForFunction(()=>document.querySelector('#error').textContent.includes('보안 키가 바뀌었습니다'));
+    // A browser restart/reload discards its old identity and requires fresh approval.
+    await page.reload();await page.waitForSelector('#access',{state:'hidden'});
+    await page.click('#connect');await page.waitForSelector('#pairing',{state:'visible'});
+    assert.equal(await page.locator('#error').textContent(),'');await page.click('#confirm');
+    await page.waitForSelector('#pairing',{state:'hidden'});
+    assert.equal(existsSync(join(dir,'pairings.json')),false);
   }
-  assert.deepEqual(pageErrors,[]);console.log('PASS HTTPS/WSS access gate, native TLS exporter pairing, pre-approval gate, clock sync, timestamped PCM, stereo, bilingual UI, remembered pairing and host pin protection');
+  assert.deepEqual(pageErrors,[]);console.log('PASS HTTPS/WSS access gate, native TLS exporter pairing, pre-approval gate, clock sync, timestamped PCM, stereo, bilingual UI, same-session reconnect, host pin protection and fresh approval after reload');
   if(!fixtureReady)await page.screenshot({path:join(cwd,'test','web-preview.png'),fullPage:true});
 }catch(e){if(page){console.error('Browser state:',await page.evaluate(()=>({phase:document.querySelector('#phase')?.textContent,error:document.querySelector('#error')?.textContent,logs:document.querySelector('#logs')?.textContent})));await page.screenshot({path:join(cwd,'test','web-preview.png'),fullPage:true}).catch(()=>{})}throw e;}finally{await browser?.close();gateway?.kill('SIGTERM');host?.close();rmSync(dir,{recursive:true,force:true})}
