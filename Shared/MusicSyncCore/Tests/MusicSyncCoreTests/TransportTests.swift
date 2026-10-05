@@ -16,6 +16,13 @@ final class TransportTests: XCTestCase {
         wait(for: [received], timeout: 10)
         harness.stop()
     }
+    func testAudioBurstDoesNotDisconnectAndFollowingClockControlSurvives() throws {
+        let harness=LoopbackHarness(burst:true)
+        let received=expectation(description:"Audio congestion preserves following ping")
+        harness.onComplete={received.fulfill()}
+        harness.onFailure={reason in XCTFail("Audio burst closed connection: \(reason)")}
+        try harness.start();wait(for:[received],timeout:10);harness.stop()
+    }
     func testDelayedTLSSessionDoesNotDisconnectOrDeliverMessagesBeforeReady() throws {
         let harness = LoopbackHarness(delayed:true)
         let received = expectation(description:"Delayed TLS bootstrap recovered")
@@ -47,11 +54,12 @@ private final class LoopbackHarness: @unchecked Sendable {
     private var pcm = false
     private let delayed: Bool
     private let unavailable: Bool
+    private let burst: Bool
     private var hostReads = 0
     private var clientReads = 0
     private var hostReady = false
     private var clientReady = false
-    init(delayed: Bool = false, unavailable: Bool = false) { self.delayed = delayed; self.unavailable = unavailable }
+    init(delayed: Bool = false, unavailable: Bool = false, burst:Bool = false) { self.delayed = delayed; self.unavailable = unavailable; self.burst=burst }
     func start() throws {
         let identity = try TLSIdentity.create()
         let parameters = try LAN.hostParameters(identity:identity)
@@ -92,12 +100,13 @@ private final class LoopbackHarness: @unchecked Sendable {
                 if case .failed(let error) = state { XCTFail("Loopback client failed: \(error)") }
                 guard case .ready = state else { return }
                 self?.clientReady = true
-                var ping = Message("ping"); ping.t1 = SyncClock.now; peer?.send(ping)
+                var ping = Message("ping"); ping.t1 = SyncClock.now; if self?.burst != true { peer?.send(ping) }
                 XCTAssertNotNil(peer.flatMap { TLSSessionInfo.read($0.connection) })
                 var audio = Message("audio"); audio.sequence = 42; audio.epoch = 1; audio.pts = SyncClock.now + 0.18
                 audio.sampleRate = 48000; audio.channels = 2; audio.frames = 480
                 audio.payload = Data(repeating: 0, count: 3840)
-                peer?.send(audio)
+                for _ in 0..<(self?.burst == true ? 200 : 1) { peer?.send(audio) }
+                if self?.burst == true { peer?.send(ping) }
             }
             peer.onMessage = { [weak self] message in
                 guard let self else { return }

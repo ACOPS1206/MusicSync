@@ -59,7 +59,8 @@ public final class Peer {
     public func send(_ message: Message) {
         guard !closed, let data = try? Framer.encode(message) else { return }
         // A stalled receiver must not accumulate seconds of stale audio.
-        guard queuedBytes + data.count < 512 * 1024 else { reportFailure("Outgoing audio queue exceeded 512 KiB"); cancel(); return }
+        if message.kind == "audio", queuedBytes + data.count > 96 * 1024 { return }
+        guard queuedBytes + data.count < 512 * 1024 else { reportFailure("Outgoing control queue exceeded 512 KiB"); cancel(); return }
         queuedBytes += data.count
         connection.send(content: data, completion: .contentProcessed { [weak self] error in
             guard let self else { return }
