@@ -2,28 +2,28 @@ name: Publish MusicSync release
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/release.yml', 'scripts/publish_release.py', 'release-notes/v0.10.1.md']
+    paths: ['.github/workflows/release.yml', 'scripts/publish_release.py', 'release-notes/v0.10.2.md']
   workflow_dispatch:
     inputs:
       tag:
         description: Release tag (existing releases are never overwritten)
-        default: v0.10.1
+        default: v0.10.2
         required: true
       source_sha:
         description: Full tested source commit SHA
-        default: 4fe894d71de624608b688689fd5ae789720dbe61
+        default: 0b4e303690a29526f6a2e188298a5644e8f2649d
         required: true
       apple_run:
         description: Successful main Apple workflow run
-        default: '37285158399'
+        default: '37295126435'
         required: true
       web_run:
         description: Successful main Web workflow run
-        default: '37285158539'
+        default: '37295064014'
         required: true
       ports_run:
         description: Successful main ports workflow run (source must match)
-        default: '37292089304'
+        default: '37295126185'
         required: true
 permissions:
   contents: write
@@ -37,11 +37,11 @@ jobs:
     timeout-minutes: 20
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: ${{ inputs.tag || 'v0.10.1' }}
-      RELEASE_SHA: ${{ inputs.source_sha || '1465604c802b07ba889c0bd7678f888cfceaa779' }}
-      APPLE_RUN: ${{ inputs.apple_run || '37285158399' }}
-      WEB_RUN: ${{ inputs.web_run || '37285158539' }}
-      PORTS_RUN: ${{ inputs.ports_run || '37292089304' }}
+      RELEASE_TAG: ${{ inputs.tag || 'v0.10.2' }}
+      RELEASE_SHA: ${{ inputs.source_sha || github.sha }}
+      APPLE_RUN: ${{ inputs.apple_run || '37295126435' }}
+      WEB_RUN: ${{ inputs.web_run || '37295064014' }}
+      PORTS_RUN: ${{ inputs.ports_run || '37295126185' }}
     steps:
       - uses: actions/checkout@v4
         with:
