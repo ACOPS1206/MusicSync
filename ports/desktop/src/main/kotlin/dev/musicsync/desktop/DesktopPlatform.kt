@@ -67,5 +67,5 @@ class WindowsCapture : AudioSource {
         library=Native.load(path,CaptureLibrary::class.java);pointer=library.ms_capture_open()?:error("WASAPI loopback unavailable for this output")
     }
     override fun read():FloatArray?=synchronized(readLock){if(closed)return@synchronized null;val out=FloatArray(960);if(library.ms_capture_read(pointer,out,480)>0)out else null}
-    override fun close(){if(closed)return;closed=true;library.ms_capture_stop(pointer);synchronized(readLock){library.ms_capture_dispose(pointer)}}
+    @Synchronized override fun close(){if(closed)return;closed=true;library.ms_capture_stop(pointer);synchronized(readLock){library.ms_capture_dispose(pointer)}}
 }

@@ -6,3 +6,10 @@ DerivedData/
 xcuserdata/
 *.xcuserstate
 .DS_Store
+
+# Kotlin/Android/Desktop build products
+ports/**/build/
+ports/.gradle/
+ports/.kotlin/
+ports/local.properties
+ports/.idea/

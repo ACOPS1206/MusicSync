@@ -34,4 +34,32 @@ class CoreTest {
         pcm.put("RIFF".toByteArray()).putInt(36+160).put("WAVEfmt ".toByteArray()).putInt(16).putShort(1).putShort(1).putInt(8000).putInt(16000).putShort(2).putShort(16).put("data".toByteArray()).putInt(160);repeat(80){pcm.putShort(8192)}
         val source=WaveSource(ByteArrayInputStream(pcm.array()));val samples=source.read()!!;assertEquals(960,samples.size);assertTrue(samples.all{it==.25f});assertNull(source.read());source.close()
     }
+
+    @Test fun realSessionRequiresApprovalAndEnforcesHostVolumePermission(){
+        val platform=object:Platform{
+            override val name="Protocol test Host";override val store=MemoryStore()
+            override fun sink():AudioSink=object:AudioSink{override val latency=.04;override fun start(){};override fun position():Pair<Long,Double>?=null;override fun write(samples:FloatArray){Thread.sleep(10)};override fun close(){}}
+            override fun fileSource(file:String):AudioSource=error("Unused");override fun captureSource():AudioSource=error("Unused")
+        }
+        val session=Session(platform,false)
+        fun waitFor(condition:()->Boolean){val end=Clock.now()+5;while(!condition()&&Clock.now()<end)Thread.sleep(10);assertTrue(condition())}
+        session.setRole("Host");session.startHost();waitFor{session.state.value.hostActive}
+        val port=session.state.value.address.substringAfterLast(':').toInt()
+        val peer=SecurePeer.client(Socket("127.0.0.1",port));val messages=LinkedBlockingQueue<Message>()
+        peer.onMessage={messages.offer(it)};peer.start()
+        fun receive(kind:String):Message{val end=Clock.now()+5;while(Clock.now()<end){val m=messages.poll(100,TimeUnit.MILLISECONDS);if(m?.kind==kind)return m};error("No $kind")}
+        val id=java.util.UUID.randomUUID().toString().uppercase()
+        peer.send(Message("hello",pairingVersion=2,deviceID=id,name="Test Client",volumeControlVersion=1,volume=1.0))
+        receive("pairChallenge");peer.send(Message("ping",t1=1.0));assertNull(messages.poll(200,TimeUnit.MILLISECONDS))
+        peer.send(Message("pairRequest"));assertEquals(peer.code,receive("pairPending").pairingCode)
+        waitFor{session.state.value.devices.any{it.code!=null}}
+        val device=session.state.value.devices.single().id
+        session.approve(device);Thread.sleep(50);assertFalse(session.state.value.devices.single().approved)
+        peer.send(Message("pairConfirm",pairingCode=peer.code));waitFor{session.state.value.devices.single().confirmed}
+        session.approve(device);assertNotNull(receive("pairApproved").pairingSecret)
+        peer.send(Message("setHostVolume",volume=.4,requestID="denied"));assertEquals(false,receive("volumeResult").accepted)
+        session.setPermissions(device,Permissions(clientMayControlHost=true));receive("volumePolicy")
+        peer.send(Message("setHostVolume",volume=.4,requestID="accepted"));assertEquals(true,receive("volumeResult").accepted);assertEquals(.4,session.state.value.volume)
+        peer.close();session.close()
+    }
 }

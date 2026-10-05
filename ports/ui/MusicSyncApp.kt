@@ -136,7 +136,7 @@ private val korean = mapOf(
                         VolumeSlider(state.volume,true,::t){session.setVolume(it)}
                         OutlinedButton(onClick={session.identify()}){Text(t("Identify speaker"))}
                         if(state.role=="Listen"&&state.paired){
-                            Text(t("Host volume"),style=MaterialTheme.typography.labelMedium);VolumeSlider(state.hostVolume,state.canControlHost,::t){session.setHostVolume(it)}
+                            Text(t("Host volume")+" · "+t(if(state.hostVolumeScope=="system")"System volume"else"MusicSync playback gain"),style=MaterialTheme.typography.labelMedium);VolumeSlider(state.hostVolume,state.canControlHost,::t){session.setHostVolume(it)}
                             TextButton(onClick={session.identifyHost()}){Text(t("Identify Host"))}
                         }
                         Text(t("Calibration")+" %.0f ms".format(calibration));Slider(value=calibration,onValueChange={calibration=it},onValueChangeFinished={session.setCalibration(calibration.toDouble())},valueRange=-30f..30f)

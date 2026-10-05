@@ -44,7 +44,7 @@ jobs:
           Copy-Item ports/native/build/Release/musicsync_capture.dll ports/desktop/src/main/resources/native/
       - name: Test TLS and audio, compile Expressive UI, build installers
         working-directory: ports
-        run: gradle -PwithAndroid=false :core:test :desktop:packageDistributionForCurrentOS --stacktrace --console=plain
+        run: gradle -PwithAndroid=false :core:test :desktop:createDistributable :desktop:packageDistributionForCurrentOS --stacktrace --console=plain
       - name: Package portable app including its Java runtime
         shell: bash
         run: python3 ports/package_desktop.py '${{ matrix.name }}'

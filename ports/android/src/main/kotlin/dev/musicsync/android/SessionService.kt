@@ -26,7 +26,7 @@ class SessionService:Service() {
         startForeground(1,notification,if(capture)ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION else ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
         if(capture){
             @Suppress("DEPRECATION") val data=intent!!.getParcelableExtra<Intent>("projectionData")
-            if(data!=null){Runtime.platform.projection?.stop();val projection=getSystemService(MediaProjectionManager::class.java).getMediaProjection(intent.getIntExtra("projectionResult",Activity.RESULT_CANCELED),data)
+            if(data!=null){Runtime.platform.projection?.stop();val projection=requireNotNull(getSystemService(MediaProjectionManager::class.java).getMediaProjection(intent.getIntExtra("projectionResult",Activity.RESULT_CANCELED),data))
                 projection.registerCallback(object:MediaProjection.Callback(){override fun onStop(){Runtime.session.stopStreaming();Runtime.platform.projection=null}},Handler(Looper.getMainLooper()))
                 Runtime.platform.projection=projection;Runtime.session.streamCapture()
             }

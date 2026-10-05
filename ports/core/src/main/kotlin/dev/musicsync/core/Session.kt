@@ -16,7 +16,7 @@ data class Snapshot(val role: String = "Listen", val phase: String = "Ready", va
     val code: String = "", val confirmed: Boolean = false, val hostName: String = "", val address: String = "",
     val devices: List<DeviceView> = emptyList(), val peers: List<VolumePeer> = emptyList(), val channel: String = "stereo",
     val selection: String = "automatic", val volume: Double = 1.0, val volumeScope: String = "app", val hostVolume: Double = 1.0,
-    val canControlHost: Boolean = false, val rtt: Double = 0.0, val offset: Double = 0.0, val jitter: Double = 0.0,
+    val hostVolumeScope: String = "app", val canControlHost: Boolean = false, val rtt: Double = 0.0, val offset: Double = 0.0, val jitter: Double = 0.0,
     val uncertainty: Double = 0.0, val latency: Double = .18, val outputLatency: Double = 0.0, val buffer: Int = 0,
     val drops: Int = 0, val scheduleError: Double = 0.0, val warmup: Double = 30.0, val warning: String = "",
     val monitor: Boolean = false, val bytesPerSecond: Long = 0, val error: String = "", val logs: List<String> = emptyList())
@@ -72,7 +72,7 @@ class Session(val platform: Platform, private val discoveryEnabled: Boolean = tr
         mutable.value = snapshot
     }
     private fun info(kind: String) = Message(kind,pairingVersion=2,hostID=hostID,name=platform.name,serviceName=platform.name,
-        hostAddress=(discovery.address ?: InetAddress.getLocalHost().hostName)+":"+(server?.localPort ?: 0))
+        hostAddress=(discovery.address ?: Discovery.lanAddress()?.hostAddress ?: "127.0.0.1")+":"+(server?.localPort ?: 0))
     fun setRole(role: String) = post {
         disconnectInternal(); stopHostInternal(); snapshot=Snapshot(role=role,nearby=snapshot.nearby,volumeScope=if(platform.systemVolume)"system" else "app")
         channelSelection="automatic"; publish()
@@ -82,7 +82,7 @@ class Session(val platform: Platform, private val discoveryEnabled: Boolean = tr
         disconnectInternal(); identity = Identity(store); val listener = ServerSocket(port); server=listener
         snapshot=snapshot.copy(hostActive=true,phase="Hosting",hostName=platform.name,address=info("address").hostAddress ?: "",error="")
         log("Host listening on ${listener.localPort}")
-        if (discoveryEnabled) io.execute { for(i in 0..40) { if(server !== listener)break; if(discovery.address != null){ discovery.advertise(platform.name,listener.localPort);break }; Thread.sleep(250) } }
+        if (discoveryEnabled) io.execute { for(i in 0..40) { if(server !== listener)break; if(discovery.address != null){ discovery.advertise(platform.name,listener.localPort);post{if(server===listener){snapshot=snapshot.copy(address=info("address").hostAddress?:"");publish()}};break }; Thread.sleep(250) } }
         io.execute {
             while (!listener.isClosed) {
                 val socket = runCatching { listener.accept() }.getOrNull() ?: break
@@ -257,13 +257,13 @@ class Session(val platform: Platform, private val discoveryEnabled: Boolean = tr
                 if(v!=null&&allowed&&applyVolume(v))peer.send(Message("volumeReport",volume=volume(),requestID=m.requestID))else peer.send(Message("volumeResult",volumeTarget="client",accepted=false,requestID=m.requestID))}
             "setChannel"->{val selection=validSelection(m.channelSelection)
                 if(selection!=null&&(m.targetPeerID==null||peersCanControlDevice)){channelSelection=selection;reportChannel(m.requestID)}else if(m.targetPeerID!=null)peer.send(Message("peerControlResult",accepted=false,requestID=m.requestID))}
-            "channel"->{if(m.outputChannel in listOf("stereo","left","right")){hostChannel=m.outputChannel!!;reportChannel()}}
+            "channel","hostChannel"->{if(m.outputChannel in listOf("stereo","left","right")){hostChannel=m.outputChannel!!;reportChannel()}}
             "identify"->{val allowed=(m.targetPeerID==null||peersCanControlDevice)&&Clock.now()-lastIdentify>=2
                 if(allowed){lastIdentify=Clock.now();player.identify()};peer.send(Message("identifyResult",accepted=allowed,requestID=m.requestID))}
             "peerVolumeDenied","peerControlDenied"->snapshot=snapshot.copy(error="Host permissions declined this device control")
         };publishIfDue()
     }
-    private fun applyPolicy(m: Message){clientCanBeControlled=m.allowHostClientVolume?:false;peersCanControlVolume=m.allowPeerClientVolume?:false;peersCanControlDevice=m.allowPeerDeviceControl?:false;snapshot=snapshot.copy(canControlHost=m.allowClientHostVolume?:false,hostVolume=validVolume(m.hostVolume)?:snapshot.hostVolume)}
+    private fun applyPolicy(m: Message){clientCanBeControlled=m.allowHostClientVolume?:false;peersCanControlVolume=m.allowPeerClientVolume?:false;peersCanControlDevice=m.allowPeerDeviceControl?:false;snapshot=snapshot.copy(canControlHost=m.allowClientHostVolume?:false,hostVolume=validVolume(m.hostVolume)?:snapshot.hostVolume,hostVolumeScope=if(m.volumeScope=="system")"system"else"app")}
     private fun effectiveChannel()=if(channelSelection=="automatic")hostChannel else channelSelection
     private fun reportChannel(requestID:String?=null){player.channel=effectiveChannel();if(snapshot.paired)client?.send(Message("channelReport",channelSelection=channelSelection,outputChannel=effectiveChannel(),playbackState=snapshot.phase,requestID=requestID))}
     fun setChannel(value:String)=post{channelSelection=validSelection(value)?:return@post;player.channel=effectiveChannel();reportChannel();publish()}

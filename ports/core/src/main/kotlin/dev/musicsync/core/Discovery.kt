@@ -12,9 +12,7 @@ class Discovery(private val update: (List<Nearby>)->Unit, private val failure: (
     private var advertised: ServiceInfo? = null
     fun start() = kotlin.concurrent.thread(name="MusicSync Bonjour",isDaemon=true) {
         try {
-            val address = NetworkInterface.getNetworkInterfaces().toList().filter { it.isUp && !it.isLoopback && !it.isVirtual }
-                .flatMap { it.inetAddresses.toList() }.filterIsInstance<Inet4Address>().firstOrNull { it.isSiteLocalAddress }
-                ?: error("No IPv4 LAN interface")
+            val address = lanAddress() ?: error("No IPv4 LAN interface")
             val instance = JmDNS.create(address,"MusicSync-${address.hostAddress.replace('.','-')}")
             if (stopped) { instance.close(); return@thread }
             dns = instance
@@ -36,5 +34,8 @@ class Discovery(private val update: (List<Nearby>)->Unit, private val failure: (
     @Synchronized fun unadvertise() { advertised?.let { dns?.unregisterService(it) }; advertised = null }
     val address get() = dns?.hostName
     override fun close() { stopped = true; kotlin.concurrent.thread(isDaemon=true) { runCatching { dns?.close() } }; dns = null }
-    companion object { const val TYPE = "_musicsync._tcp.local." }
+    companion object {
+        const val TYPE = "_musicsync._tcp.local."
+        fun lanAddress():Inet4Address?=NetworkInterface.getNetworkInterfaces().toList().filter{it.isUp&&!it.isLoopback&&!it.isVirtual}.flatMap{it.inetAddresses.toList()}.filterIsInstance<Inet4Address>().firstOrNull{it.isSiteLocalAddress}
+    }
 }

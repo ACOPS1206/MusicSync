@@ -11,6 +11,7 @@ android {
     }
     sourceSets["main"].java.srcDir("../ui")
     buildFeatures { compose = true; buildConfig = true }
+    packaging { resources { excludes += setOf("META-INF/versions/**", "META-INF/*.SF", "META-INF/*.RSA", "META-INF/*.DSA"); merges += "META-INF/services/**" } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
     // The debug certificate lets users install the CI APK directly; release uses their own signing.

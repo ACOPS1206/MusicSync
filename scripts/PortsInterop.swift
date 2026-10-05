@@ -13,6 +13,7 @@ var hostID = ""
 var approved = false
 var receivedPong = false
 var receivedChannel = false
+var receivedPCM = false
 var failure = ""
 peer.onFailure = { reason in failure=reason; done.signal() }
 peer.onState = { state in
@@ -34,13 +35,18 @@ peer.onMessage = { m in
         approved=true
         var ping=Message("ping");ping.t1=SyncClock.now;peer.send(ping)
         var report=Message("channelReport");report.channelSelection="left";report.outputChannel="left";report.playbackState="Streaming";peer.send(report)
+        var stats=Message("stats");stats.rtt=0.01;stats.offset=0;stats.jitter=0;stats.latency=0.18;stats.playbackState="Streaming";peer.send(stats)
         var identify=Message("identifyHost");peer.send(identify)
     } else if m.kind=="pong" {receivedPong=m.t1 != nil && m.t2 != nil && m.t3 != nil}
     else if m.kind=="volumePeers" {receivedChannel=true}
-    if approved && receivedPong && receivedChannel {done.signal()}
+    else if m.kind=="audio" {
+        guard m.validAudio, m.payload?.prefix(8) == Data([0,0,128,62,0,0,128,190]) else {failure="Invalid Kotlin stereo PCM";done.signal();return}
+        receivedPCM=true
+    }
+    if approved && receivedPong && receivedChannel && receivedPCM {done.signal()}
 }
 peer.start()
 let result=done.wait(timeout:.now()+30)
 peer.cancel()
-guard result == .success,failure.isEmpty,approved,receivedPong,receivedChannel else{fputs("Interop failed: \(failure)\n",stderr);exit(1)}
-print("PASS: Kotlin/Swift TLS 1.3 exporters, human code approval, authenticated clocks and roster")
+guard result == .success,failure.isEmpty,approved,receivedPong,receivedChannel,receivedPCM else{fputs("Interop failed: \(failure)\n",stderr);exit(1)}
+print("PASS: Kotlin/Swift TLS 1.3 exporters, human code approval, authenticated clocks, roster and stereo PCM")
