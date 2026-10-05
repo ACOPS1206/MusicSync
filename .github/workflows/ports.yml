@@ -1,0 +1,28 @@
+name: Build MusicSync ports
+on:
+  push:
+    paths: ['ports/**', '.github/workflows/ports.yml', 'scripts/test_ports_interop.sh', 'scripts/PortsInterop.swift']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  core:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Compile and test real TLS, framing, synchronization and PCM
+        working-directory: ports
+        run: gradle -PwithAndroid=false :core:test --stacktrace --console=plain
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: MusicSync-port-tests
+          path: ports/core/build/reports/tests/

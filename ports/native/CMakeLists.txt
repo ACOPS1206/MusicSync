@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.20)
+project(musicsync_capture LANGUAGES CXX)
+include(FetchContent)
+FetchContent_Declare(miniaudio URL https://github.com/mackron/miniaudio/archive/refs/tags/0.11.23.tar.gz DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+FetchContent_MakeAvailable(miniaudio)
+add_library(musicsync_capture SHARED capture.cpp)
+target_include_directories(musicsync_capture PRIVATE ${miniaudio_SOURCE_DIR})
+target_compile_features(musicsync_capture PRIVATE cxx_std_17)
