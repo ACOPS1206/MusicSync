@@ -132,8 +132,9 @@ class SecurePeer private constructor(val socket: Socket, private val protocol: T
             val crypto = crypto(); var binding = byteArrayOf()
             val server = object : DefaultTlsServer(crypto) {
                 override fun getSupportedVersions() = arrayOf(ProtocolVersion.TLSv13)
+                override fun getCredentials(): TlsCredentials = getECDSASignerCredentials()
                 override fun getECDSASignerCredentials(): TlsCredentialedSigner {
-                    val chain = org.bouncycastle.tls.Certificate(arrayOf(crypto.createCertificate(identity.cert.encoded)))
+                    val chain = org.bouncycastle.tls.Certificate(byteArrayOf(),arrayOf(CertificateEntry(crypto.createCertificate(identity.cert.encoded),null)))
                     return JcaDefaultTlsCredentialedSigner(TlsCryptoParameters(context),crypto,identity.key,chain,SignatureAndHashAlgorithm(HashAlgorithm.sha256,SignatureAlgorithm.ecdsa))
                 }
                 override fun notifyHandshakeComplete() { super.notifyHandshakeComplete(); binding = context.exportKeyingMaterial("EXPORTER-MusicSync-pairing-v2",null,32) }

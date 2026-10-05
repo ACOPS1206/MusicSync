@@ -48,7 +48,8 @@ class Session(val platform: Platform, private val discoveryEnabled: Boolean = tr
     private var lastPong = 0.0; private var pingCount = 0; private var lastReport = 0.0; private val pings = mutableSetOf<Double>()
     private var clientCanBeControlled = false; private var peersCanControlVolume = false; private var peersCanControlDevice = false
     private var hostChannel = "stereo"; private var channelSelection = "automatic"
-    private var source: AudioSource? = null; private var sourceGeneration = 0; private var epoch = 0L; private var sequence = 0L
+    private var source: AudioSource? = null; @Volatile private var sourceGeneration = 0; private var epoch = 0L; private var sequence = 0L
+    private var nextPTS = 0.0; private var lastStreamDelay = .18
     private var latency = .18; private var lastPublish = 0.0; private var totalBytes = 0L; private var lastBytes = 0L
     private var reportBytes = 0L; private var lastTraffic = Clock.now(); private var lastIdentify = 0.0
     private val player = ScheduledPlayer { platform.sink() }
@@ -201,6 +202,7 @@ class Session(val platform: Platform, private val discoveryEnabled: Boolean = tr
             "stats"->{if(m.rtt?.isFinite()!=true||m.jitter?.isFinite()!=true||m.latency?.isFinite()!=true)return
                 if(m.rtt !in 0.0..<1.0||m.jitter<0||m.latency !in .18.. .5)return
                 d.ready=true;d.lastStats=Clock.now();d.rtt=m.rtt;d.state=m.playbackState?:"Waiting"
+                snapshot=snapshot.copy(rtt=m.rtt,offset=m.offset?.takeIf{it.isFinite()}?:0.0,jitter=m.jitter,uncertainty=m.rtt/2+m.jitter)
                 val needed=max(.18,max(m.latency,m.rtt/2+4*m.jitter+.08)).coerceAtMost(.5);latency=max(latency,needed)
                 d.peer.send(Message("timeline",latency=latency));updateDevice(d,m);roster()
             }
@@ -288,10 +290,14 @@ class Session(val platform: Platform, private val discoveryEnabled: Boolean = tr
         if(server==null)return@post;stopStreamingInternal();val token=++sourceGeneration
         io.execute {
             try {
-                val input=make();post{if(sourceGeneration!=token){input.close();return@post};source=input;epoch++;sequence=0;latency=.18;snapshot=snapshot.copy(streaming=true,monitor=input.monitor,phase="Streaming",error="");publish()}
+                val input=make();post{if(sourceGeneration!=token){input.close();return@post};source=input;epoch++;sequence=0;latency=.18;nextPTS=0.0;lastStreamDelay=.18;snapshot=snapshot.copy(streaming=true,monitor=input.monitor,phase="Streaming",error="");publish()}
                 while(sourceGeneration==token){val samples=input.read()?:break;val captured=Clock.now();post{
                     if(sourceGeneration!=token)return@post
-                    val m=Message("audio",sequence=sequence++,epoch=epoch,pts=captured+latency,sampleRate=48000.0,channels=2,frames=samples.size/2,payload=Wire.payload(samples),latency=latency,monitor=input.monitor)
+                    if(nextPTS==0.0)nextPTS=captured+latency
+                    if(latency>lastStreamDelay){nextPTS+=latency-lastStreamDelay;lastStreamDelay=latency}
+                    if(nextPTS<captured+.025){nextPTS=captured+latency;epoch++;sequence=0}
+                    val presentation=nextPTS;nextPTS+=samples.size/2/48000.0
+                    val m=Message("audio",sequence=sequence++,epoch=epoch,pts=presentation,sampleRate=48000.0,channels=2,frames=samples.size/2,payload=Wire.payload(samples),latency=latency,monitor=input.monitor)
                     devices.values.filter{it.approved&&it.ready&&captured-it.lastStats<5}.forEach{it.peer.send(m)}
                     if(!input.monitor)player.schedule(samples,m.pts!!)
                     totalBytes+=samples.size*4

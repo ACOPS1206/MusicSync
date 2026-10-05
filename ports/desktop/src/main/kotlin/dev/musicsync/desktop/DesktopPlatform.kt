@@ -18,7 +18,7 @@ class DesktopStore : Store {
         val tmp=File(folder,"identity.tmp");tmp.createNewFile();protect(tmp);tmp.outputStream().use{data.store(it,"MusicSync private local identity; do not share")};Files.move(tmp.toPath(),file.toPath(),StandardCopyOption.REPLACE_EXISTING);protect(file)
     }
 }
-class DesktopPlatform : Platform {
+class DesktopPlatform : dev.musicsync.core.Platform {
     override val name = (System.getenv("COMPUTERNAME") ?: runCatching{java.net.InetAddress.getLocalHost().hostName}.getOrDefault("MusicSync Desktop"))
     override val store = DesktopStore()
     override fun sink():AudioSink=DesktopSink()

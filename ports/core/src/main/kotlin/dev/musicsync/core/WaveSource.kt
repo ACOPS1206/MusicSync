@@ -47,7 +47,7 @@ class WaveSource(private val input: InputStream) : AudioSource {
         if(a==null){a=next()?:return null;b=next();start=Clock.now()}
         val out=FloatArray(960);var count=0
         while(count<480&&a!=null){val x=a!!;val y=b?:x;for(c in 0..1)out[count*2+c]=(x[c]+(y[c]-x[c])*phase).toFloat();count++;phase+=rate/48000.0
-            while(phase>=1&&a!=null){phase--;a=b;b=if(a!=null)next()else null}
+            while(phase>=1-1e-9&&a!=null){phase--;a=b;b=if(a!=null)next()else null}
         }
         val due=start+produced/48000.0;produced+=count
         while(Clock.now()<due)LockSupport.parkNanos(((due-Clock.now())*1e9).toLong().coerceAtMost(5_000_000))
