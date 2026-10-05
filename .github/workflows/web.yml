@@ -1,0 +1,76 @@
+name: Build MusicSync web
+on:
+  push:
+    paths: ['web/**', 'scripts/WebInteropHost.swift', 'scripts/test_web_interop.sh', '.github/workflows/web.yml', 'Shared/MusicSyncCore/**']
+  pull_request:
+    paths: ['web/**', 'scripts/WebInteropHost.swift', 'scripts/test_web_interop.sh', '.github/workflows/web.yml', 'Shared/MusicSyncCore/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: musicsync-web-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser
+      - name: Package runnable LAN gateway and browser client
+        run: |
+          npm ci --omit=dev
+          mkdir -p ../dist
+          cp ../LICENSE LICENSE
+          zip -qr ../dist/MusicSync-Web.zip package.json package-lock.json protocol.mjs server.mjs setup.mjs public node_modules README.md README.ko.md LICENSE
+          unzip -l ../dist/MusicSync-Web.zip > ../dist/web-layout.txt
+          test -s ../dist/MusicSync-Web.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicSync-Web
+          path: dist/MusicSync-Web.zip
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: MusicSync-Web-tests
+          path: |
+            web/test/web-preview.png
+            dist/web-layout.txt
+  apple-interop:
+    runs-on: macos-26
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npx playwright install chromium
+        working-directory: web
+      - name: Real Swift Host to browser encrypted scheduled PCM
+        run: bash scripts/test_web_interop.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: MusicSync-Web-Swift-tests
+          path: |
+            dist/web-interop/*.log
+            web/test/web-preview.png

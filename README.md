@@ -209,3 +209,7 @@ The Client's **Connected Devices** now shows other approved Clients' actual repo
 ## Windows, Android and Linux ports (v0.9.0)
 
 All three ports are in this repository under [`ports/`](ports/README.md), with Material 3 Expressive UI, real Host/Listen networking, TLS pairing, scheduled PCM, stereo/device permissions and English/Korean support. The Apple apps retain SwiftUI/Liquid Glass. Download APK, Windows MSI/ZIP and Linux DEB/RPM/ZIP from **Actions → Build MusicSync ports**. Use WAV hosting for delayed local synchronization; system sharing on these ports is explicitly monitor mode. See the port README for OS requirements, installation and hardware-validation limits.
+
+## Web client (0.10.0)
+
+[MusicSync Web](web/README.md) adds a LAN HTTPS/WSS gateway and a real browser receiver with host approval, encrypted native transport, scheduled 48 kHz stereo PCM, adaptive buffering, Korean/English UI and permission-gated device controls. Run `npm ci`, `npm run setup`, `npm start` in `web/`, trust your private CA on your own devices, then open the terminal invitation link. The browser discovers native hosts through the gateway; no Internet streaming service is used. This first web version receives from native hosts; browser-only hosting and native Live Activities are not implemented. Actions produces `MusicSync-Web.zip` and tests actual browser/Swift TLS interoperability. Existing native app versions/artifacts remain separate.

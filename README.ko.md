@@ -231,3 +231,7 @@ Mac·iOS 메인 화면과 도움말에 버전·빌드 번호를 표시합니다.
 ## Windows·Android·Linux 포트 (v0.9.0)
 
 기존 리포지토리의 [`ports/`](ports/README.ko.md)에 세 플랫폼을 추가했습니다. Material 3 Expressive UI, 실제 호스트/수신 네트워크·TLS 페어링·예약 PCM 재생·스테레오/기기별 권한·영어/한국어를 제공합니다. 기존 Apple 앱은 SwiftUI/Liquid Glass를 유지합니다. **Actions → Build MusicSync ports**에서 APK, Windows MSI/ZIP, Linux DEB/RPM/ZIP을 받으세요. WAV 호스팅은 로컬도 지연해 동기화하며 새 플랫폼의 시스템 공유는 모니터 모드입니다. 요구 OS·설치·실기기 검증 제한은 포트 README에 정리했습니다.
+
+## 웹 클라이언트 (0.10.0)
+
+[MusicSync 웹 안내](web/README.ko.md): LAN HTTPS/WSS 게이트웨이와 실제 브라우저 수신기를 추가했습니다. 호스트 승인·암호화된 네이티브 연결·48 kHz 스테레오 PCM 예약 재생·적응형 버퍼·한영 UI·권한 기반 기기 제어를 지원합니다. `web/`에서 `npm ci`, `npm run setup`, `npm start`를 실행하고 본인 기기에 개인 CA를 신뢰한 뒤 터미널 초대 링크를 엽니다. 게이트웨이를 통해 기존 호스트를 자동 검색하며 인터넷 오디오 서버는 사용하지 않습니다. 첫 웹 버전은 수신 전용으로, 순수 웹 호스팅과 네이티브 Live Activity는 구현하지 않았습니다. Actions에서 `MusicSync-Web.zip`을 생성하고 실제 브라우저↔Swift TLS 연결을 검증합니다. 기존 네이티브 앱 버전과 artifact는 별도입니다.
