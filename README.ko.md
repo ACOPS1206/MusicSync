@@ -1,5 +1,7 @@
 # MusicSync
 
+## 아이폰(들), Mac(들)을 스테레오 스피커로 사용하세요!!
+
 [English](README.md) | [한국어](README.ko.md)
 
 Mac의 시스템 오디오 또는 iPhone에서 선택한 음악 파일을 같은 LAN의 Mac·iPhone으로 전송하고, 공통 재생 타임라인으로 스피커 출력을 맞추는 Swift/SwiftUI 앱입니다. 두 앱 모두 **호스팅·수신** 탭을 제공하며, 두 기기를 좌우 스피커로 사용하는 스테레오 페어를 지원합니다.
