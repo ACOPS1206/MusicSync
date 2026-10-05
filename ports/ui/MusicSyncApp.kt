@@ -41,7 +41,7 @@ private val korean = mapOf(
     "Share a LAN with other speakers. Approve only a matching pairing code. No cloud server is used." to "스피커를 같은 LAN에 연결하세요. 페어링 코드가 일치하는 기기만 승인하세요. 클라우드 서버는 사용하지 않습니다.",
     "RTT is a network round trip. Buffer adds shared delay so speakers can play at a planned time. These estimates do not measure acoustic speaker error." to "RTT는 네트워크 왕복 시간입니다. 버퍼는 스피커가 예약된 시각에 재생할 시간을 확보합니다. 표시된 추정값은 실제 스피커 간 음향 오차 측정값이 아닙니다.",
     "System capture needs permission on Android and capture-capable apps. Desktop WAV hosting supports PCM WAV, 1–2 channels, 8–192 kHz. DRM audio may be unavailable." to "Android 시스템 캡처에는 사용자 승인과 원본 앱의 캡처 허용이 필요합니다. WAV 호스팅은 1~2채널, 8~192 kHz PCM WAV를 지원합니다. DRM 오디오는 캡처되지 않을 수 있습니다.",
-    "Pairing is kept only in memory until the app closes. Restarting either device requires code confirmation and Host approval again. Host certificates remain separately stored." to "Windows/Linux 인증 정보는 개인 로컬 파일에 보관하고 Android는 Keystore 암호화를 사용합니다. 데스크톱 인증 파일은 공유하지 마세요.",
+    "Pairing is kept only in memory until the app closes. Restarting either device requires code confirmation and Host approval again. Host certificates remain separately stored." to "페어링은 앱 종료 전까지만 메모리에 유지합니다. 어느 한쪽 앱을 재시작하면 코드 확인과 호스트 승인이 다시 필요합니다. 호스트 인증서는 별도로 저장합니다.",
     "Wi-Fi congestion or audio route delay can increase uncertainty. Bluetooth/AirPlay add extra latency. Use built-in speakers and calibrate after checking the actual sound." to "Wi-Fi 혼잡이나 오디오 경로 지연으로 불확실성이 커질 수 있습니다. Bluetooth/AirPlay는 지연을 추가합니다. 내장 스피커를 사용하고 실제 소리를 확인한 뒤 수동 보정하세요.",
     "Keep the app open for initial pairing. Android uses an ongoing audio notification for background sessions." to "첫 페어링 시 앱을 열어 두세요. Android는 백그라운드 오디오 세션에 지속 알림을 사용합니다."
 )
