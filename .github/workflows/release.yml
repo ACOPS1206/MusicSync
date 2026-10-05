@@ -1,0 +1,56 @@
+name: Publish MusicSync release
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/release.yml', 'release-notes/v0.10.0.md']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag (existing releases are never overwritten)
+        default: v0.10.0
+        required: true
+      source_sha:
+        description: Full tested source commit SHA
+        default: 1b575cc28cd969350ef6d92ea2a752072519d746
+        required: true
+      apple_run:
+        description: Successful main Apple workflow run
+        default: '37285158399'
+        required: true
+      web_run:
+        description: Successful main Web workflow run
+        default: '37285158539'
+        required: true
+      ports_run:
+        description: Successful main ports workflow run (source must match)
+        default: '37277604280'
+        required: true
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: musicsync-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.tag || 'v0.10.0' }}
+      RELEASE_SHA: ${{ inputs.source_sha || '1b575cc28cd969350ef6d92ea2a752072519d746' }}
+      APPLE_RUN: ${{ inputs.apple_run || '37285158399' }}
+      WEB_RUN: ${{ inputs.web_run || '37285158539' }}
+      PORTS_RUN: ${{ inputs.ports_run || '37277604280' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify sources, download successful builds, stage and publish release
+        run: python3 scripts/publish_release.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: MusicSync-Release-checksums
+          path: dist/release/SHA256SUMS.txt
+          if-no-files-found: ignore
