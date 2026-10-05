@@ -2,7 +2,7 @@ name: Publish MusicSync release
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/release.yml', 'release-notes/v0.10.0.md']
+    paths: ['.github/workflows/release.yml', 'scripts/publish_release.py', 'release-notes/v0.10.0.md']
   workflow_dispatch:
     inputs:
       tag:

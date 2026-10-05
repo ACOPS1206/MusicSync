@@ -96,22 +96,42 @@ for name in ['MusicSync-iOS.ipa', 'MusicSync-iOS.app.zip', 'MusicSync-macOS.zip'
 binary_files = sorted(assets.iterdir())
 checksums = '\n'.join(f'{hashlib.file_digest(p.open("rb"), "sha256").hexdigest()}  {p.name}' for p in binary_files) + '\n'
 (assets / 'SHA256SUMS.txt').write_text(checksums)
-# Fail safely on an existing release/tag; never overwrite a published release.
-existing = subprocess.run(['gh', 'release', 'view', TAG, '--repo', REPO], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-if existing.returncode == 0:
-    raise SystemExit('Release already exists; no assets were overwritten')
-try:
-    api(f'git/ref/tags/{TAG}')
-except subprocess.CalledProcessError:
-    pass
+# Drafts can have an uncreated tag; discover them by release ID, not /releases/tags.
+matches = [r for r in api('releases?per_page=100') if r['tag_name'] == TAG]
+if len(matches) > 1:
+    raise SystemExit('Ambiguous release')
+release = matches[0] if matches else None
+if release:
+    if not release['draft'] or release['target_commitish'] != TARGET:
+        raise SystemExit('Existing published release or different draft target; nothing overwritten')
 else:
-    raise SystemExit('Tag already exists; choose a new version')
+    try:
+        api(f'git/ref/tags/{TAG}')
+    except subprocess.CalledProcessError:
+        pass
+    else:
+        raise SystemExit('Tag already exists; choose a new version')
+    # A draft isolates upload failures. Publish only after every asset is present.
+    gh('release', 'create', TAG, '--repo', REPO, '--target', TARGET, '--draft',
+       '--title', f'MusicSync {TAG} — Web & multi-platform apps', '--notes-file', str(notes))
+    matches = [r for r in api('releases?per_page=100') if r['tag_name'] == TAG]
+    if len(matches) != 1 or not matches[0]['draft']:
+        raise SystemExit('Draft creation verification failed')
+    release = matches[0]
 
-# A draft isolates upload failures. Publish only after every asset is present.
-gh('release', 'create', TAG, '--repo', REPO, '--target', TARGET, '--draft',
-   '--title', f'MusicSync {TAG} — Web & multi-platform apps', '--notes-file', str(notes))
-gh('release', 'upload', TAG, '--repo', REPO, *[str(p) for p in sorted(assets.iterdir())])
-release = api(f'releases/tags/{TAG}')
+release_id = release['id']
+uploaded = {a['name']: a for a in api(f'releases/{release_id}')['assets']}
+missing = []
+for path in assets.iterdir():
+    asset = uploaded.get(path.name)
+    if asset is None:
+        missing.append(str(path))
+    elif (asset['size'] != path.stat().st_size or not asset.get('digest')
+          or asset['digest'] != 'sha256:' + hashlib.file_digest(path.open('rb'), 'sha256').hexdigest()):
+        raise SystemExit('Existing draft asset mismatch; no asset overwritten')
+if missing:
+    gh('release', 'upload', TAG, '--repo', REPO, *sorted(missing))
+release = api(f'releases/{release_id}')
 uploaded = {a['name']: a for a in release['assets']}
 for path in assets.iterdir():
     if path.name not in uploaded or uploaded[path.name]['size'] != path.stat().st_size:
@@ -119,8 +139,8 @@ for path in assets.iterdir():
     digest = uploaded[path.name].get('digest')
     if digest and digest != 'sha256:' + hashlib.file_digest(path.open('rb'), 'sha256').hexdigest():
         raise SystemExit('Upload checksum mismatch; release remains a draft')
-gh('release', 'edit', TAG, '--repo', REPO, '--draft=false', '--latest')
-release = api(f'releases/tags/{TAG}')
+gh('api', '--method', 'PATCH', f'repos/{REPO}/releases/{release_id}', '-F', 'draft=false', '-f', 'make_latest=true')
+release = api(f'releases/{release_id}')
 if release['draft'] or len(release['assets']) != len(list(assets.iterdir())):
     raise SystemExit('Published release verification failed')
 print(f'Published {release["html_url"]}: {len(release["assets"])} verified assets')
