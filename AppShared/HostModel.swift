@@ -252,7 +252,7 @@ struct ConnectedDevice: Identifiable {
             devices[index].supportsVolumeControl = message.volumeControlVersion == 1
             devices[index].volume = VolumeControl.valid(message.volume) ?? 1
             devices[index].volumeScope = message.volumeScope == "system" ? "system" : "app"
-            if let data = PairingStore.read(volumePolicyKey(id)).flatMap { $0.data(using:.utf8) }, let policy = try? JSONDecoder().decode(VolumePermissions.self,from:data) { devices[index].permissions = policy }
+            if let data = PairingStore.read(volumePolicyKey(id)).flatMap({ $0.data(using:.utf8) }), let policy = try? JSONDecoder().decode(VolumePermissions.self,from:data) { devices[index].permissions = policy }
             devices[index].deviceID = id; devices[index].name = String((message.name ?? "MusicSync Client").prefix(80))
             devices[index].channelSelection = ChannelSelection(rawValue:message.channelSelection ?? "automatic") ?? .automatic
             var challenge = hostInfo("pairChallenge"); challenge.nonce = devices[index].nonce; peer.send(challenge)
