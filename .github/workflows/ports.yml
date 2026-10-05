@@ -40,6 +40,7 @@ jobs:
         run: |
           cmake -S ports/native -B ports/native/build -A x64
           cmake --build ports/native/build --config Release
+          ctest --test-dir ports/native/build -C Release --output-on-failure
           New-Item -ItemType Directory -Force ports/desktop/src/main/resources/native
           Copy-Item ports/native/build/Release/musicsync_capture.dll ports/desktop/src/main/resources/native/
       - name: Test TLS and audio, compile Expressive UI, build installers

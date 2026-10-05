@@ -65,7 +65,7 @@ private val korean = mapOf(
                                 TextButton(onClick={help=true}){Text(t("Help"))};TextButton(onClick={logs=true}){Text(t("Logs"))}
                                 TextButton(onClick={ko=!ko}){Text(if(ko)"English"else"한국어")}
                             }
-                            Text("0.9.0 · Build 12",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("0.9.1 · Build 13",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                             TabRow(selectedTabIndex=if(state.role=="Host")1 else 0){listOf("Listen","Host").forEachIndexed{i,role->Tab(selected=state.role==role,onClick={session.setRole(role);onEnd()},text={Text(t(role))})}}
                         }
                     }

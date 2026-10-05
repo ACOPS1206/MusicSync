@@ -63,11 +63,9 @@ class ScheduledPlayer(private val factory: ()->AudioSink) : AutoCloseable {
                 while (active.get()) {
                     if (Clock.now() >= nextStamp) {
                         output.position()?.let { (frame, time) ->
-                            val measured = time - frame/48000.0
-                            // Snap initial observations; then slow correction to avoid jitter modulation.
-                            origin = if (written < 48000) measured else origin + (measured-origin).coerceIn(-.001,.001)*.1
+                            origin = OutputTimeline.discipline(origin,frame,time,written)
                         }
-                        nextStamp = Clock.now() + 1.0
+                        nextStamp = Clock.now() + .1
                     }
                     val chunk = FloatArray(480*2)
                     for (frame in 0 until 480) {
@@ -110,5 +108,16 @@ class ScheduledPlayer(private val factory: ()->AudioSink) : AutoCloseable {
     }
     override fun close() {
         active.set(false); runCatching { sink?.close() }; worker?.join(500); synchronized(this) { blocks.clear() }; worker = null; failure=""
+    }
+}
+
+/** A hardware discontinuity must not leave playback permanently on the old slow timeline. */
+object OutputTimeline {
+    fun discipline(origin:Double, frame:Long, time:Double, written:Long):Double {
+        if(!time.isFinite())return origin
+        val measured=time-frame/48000.0
+        val delta=measured-origin
+        return if(written<48000||abs(delta)>.020)measured
+            else origin+delta.coerceIn(-.001,.001)*.1
     }
 }

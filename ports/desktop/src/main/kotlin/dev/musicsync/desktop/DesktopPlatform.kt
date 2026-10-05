@@ -21,7 +21,7 @@ class DesktopStore : Store {
 class DesktopPlatform : dev.musicsync.core.Platform {
     override val name = (System.getenv("COMPUTERNAME") ?: runCatching{java.net.InetAddress.getLocalHost().hostName}.getOrDefault("MusicSync Desktop"))
     override val store = DesktopStore()
-    override fun sink():AudioSink=DesktopSink()
+    override fun sink():AudioSink=if(System.getProperty("os.name").startsWith("Windows"))WindowsSink()else DesktopSink()
     override fun fileSource(file:String):AudioSource=WaveSource(File(file).inputStream().buffered())
     override fun captureSource():AudioSource=if(System.getProperty("os.name").startsWith("Windows"))WindowsCapture()else PulseCapture()
 }

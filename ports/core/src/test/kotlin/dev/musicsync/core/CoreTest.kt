@@ -18,6 +18,21 @@ class CoreTest {
         q.insert(m(2,9.0));assertEquals(0,q.take(10.0,0.0).size);assertEquals(1,q.drops);repeat(120){q.insert(m(it+3L,20.0))};assertEquals(100,q.size)
         assertTrue(q.insert(m(1,30.0,2)));q.insert(m(500,30.0,1));assertEquals(1,q.size)
     }
+    @Test fun outputClockIncludesStartupQueueAndRecoversHardwareDiscontinuity(){
+        // Endpoint clock is still inside prefilled silence: frame -960 is now,
+        // so submitted frame zero is audible 20 ms later, not now.
+        assertEquals(10.02,OutputTimeline.discipline(10.04,-960,10.0,0),1e-9)
+        // Once running, a 100 ms underrun must re-anchor rather than correcting
+        // only 0.1 ms each second and leaving clients audibly late for minutes.
+        assertEquals(10.12,OutputTimeline.discipline(10.02,96000,12.12,96000),1e-9)
+        assertEquals(10.0201,OutputTimeline.discipline(10.02,96000,12.024,96000),1e-9)
+        assertEquals(10.02,OutputTimeline.discipline(10.02,96000,Double.NaN,96000),1e-9)
+    }
+    @Test fun longOutputRouteSchedulesBeforeItBecomesTooLate(){
+        val q=JitterBuffer();val m=Message("audio",sequence=0,epoch=1,pts=10.25,sampleRate=48000.0,channels=2,frames=1,payload=Wire.payload(floatArrayOf(.25f,-.25f)))
+        q.insert(m);assertTrue(q.take(10.0,0.0).isEmpty())
+        assertEquals(1,q.take(10.0,0.0,.3).size)
+    }
     @Test fun tlsExporterPinsAndProof(){
         val store=MemoryStore();val identity=Identity(store);assertEquals(Pairing.pin(identity.cert),Pairing.pin(Identity(store).cert))
         val listener=ServerSocket(0);val serverResult=CompletableFuture<SecurePeer>()

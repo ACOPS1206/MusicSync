@@ -138,7 +138,7 @@ class JitterBuffer {
         while (packets.isNotEmpty()) {
             val m = packets.firstEntry().value
             val local = m.pts!! - offset
-            if (local > now + horizon) break
+            if (local > now + horizon.coerceIn(.13,.5)) break
             packets.pollFirstEntry(); last = m.sequence!!
             if (local < now + .015) drops++ else result.add(m)
         }

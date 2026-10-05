@@ -76,3 +76,9 @@ CI validates compile/build, packaging, real TLS connections, exporter equality/p
 ## Dependencies and license
 
 MusicSync source remains MIT. Compose/Kotlin libraries, Bouncy Castle (TLS exporter interoperability), JmDNS (desktop/Android DNS-SD), JNA and miniaudio (Windows capture) are used because Apple-only frameworks cannot implement these ports. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and bundled licenses. Experimental Expressive APIs are pinned; SDK/API changes are validated by CI instead of assuming compatibility.
+
+## 0.9.1 / build 13 — Windows output timing correction
+
+Windows playback now uses a native event-driven WASAPI shared-mode renderer instead of JavaSound. It queries `IAudioClock` position/frequency and its QPC sample time, maps QPC to the JVM monotonic clock without assuming their epochs match, and accounts for prefilled startup silence and underrun silence. The requested endpoint buffer is 20 ms (actual capacity is device-dependent). There is no silent fallback to the old mixer clock; output failures identify the WASAPI HRESULT in logs. Linux retains JavaSound.
+
+The shared scheduler samples output clocks every 100 ms, re-anchors after large hardware timeline discontinuities, and schedules further ahead for routes with long reported latency. Other network, authentication and channel protocols are unchanged. The original system sound in monitor mode remains undelayed; this fix concerns MusicSync's own local/client playback. CI validates native compilation, clock unit conversion, startup/underrun timeline handling and protocol interoperability. Physical speaker alignment still needs comparison on the user's Windows device; built-in/wired speakers are the best starting point, since Bluetooth and audio enhancement pipelines may add latency not reported by the driver. Please record the role/source, output device, relative delay, RTT, buffer, scheduling error and logs when reporting a timing problem.

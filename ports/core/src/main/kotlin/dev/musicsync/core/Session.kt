@@ -315,7 +315,7 @@ class Session(val platform: Platform, private val discoveryEnabled: Boolean = tr
         if(snapshot.paired){
             if(now-lastReport>=.1){pingCount++;if(pingCount<=16||pingCount%10==0){pings.removeIf{now-it>3};pings.add(now);client?.send(Message("ping",t1=now))};lastReport=now}
             if(now-lastPong>5){lost("Host clock timed out");return}
-            if(clock.ready){buffer.take(now,clock.offset).forEach{player.schedule(it.samples(),it.pts!!-clock.offset)}
+            if(clock.ready){buffer.take(now,clock.offset,max(.13,player.outputLatency+.08)).forEach{player.schedule(it.samples(),it.pts!!-clock.offset)}
                 if(now-lastPublish>=.25){
                     val drops=buffer.drops+player.drops
                     if(drops>lastReportedDrops)requestedLatency=(max(latency,requestedLatency)+.02).coerceAtMost(.5)

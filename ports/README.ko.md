@@ -62,3 +62,9 @@ Windows 실행 파일은 Authenticode 서명하지 않습니다. Android debug A
 CI에서 컴파일·패키징·APK 서명/구조·데스크톱 실행 파일/Java 포함·실제 TLS exporter/공개키/HMAC·PCM·시계·버퍼·WAV 테스트와 **Kotlin 호스트→Swift 클라이언트 및 Swift 호스트→Kotlin 클라이언트의 실제 예약 PCM** 연결을 확인합니다. 실제 Android/Windows/Linux 스피커, 캡처 권한·방화벽·Bonjour 및 음향 싱크는 실기기 검증이 남습니다.
 
 MusicSync는 MIT입니다. 포트의 Compose/Kotlin·Bouncy Castle·JmDNS·JNA·miniaudio와 포함 Java 런타임에는 각자 라이선스가 적용됩니다. [제3자 고지](THIRD_PARTY_NOTICES.md)를 확인하세요. Apple 프레임워크가 제공하던 UI·TLS exporter·DNS-SD·Windows 캡처를 새 플랫폼에서 구현하기 위한 의존성이며 Expressive alpha API는 버전을 고정합니다.
+
+## 0.9.1 / 빌드 13 — Windows 출력 시각 보정
+
+Windows 재생을 JavaSound에서 이벤트 기반 네이티브 WASAPI 공유 모드로 바꿨습니다. `IAudioClock`의 위치·주파수·QPC 표본 시각을 읽고, JVM 단조 시계와 시작 기준이 같다고 가정하지 않고 변환합니다. 시작 시 미리 채운 무음과 underrun 무음도 출력 프레임 번호에 반영합니다. 요청 버퍼는 20 ms이며 실제 크기는 장치에 따라 달라집니다. 이전 믹서 시계로 자동 폴백하지 않으며, 실패 시 로그에 WASAPI HRESULT를 표시합니다. Linux는 JavaSound를 유지합니다.
+
+공통 예약기는 100 ms마다 출력 시계를 확인하고 큰 출력 타임라인 변화 후 재정렬하며, 출력 지연이 긴 기기는 더 일찍 예약합니다. 네트워크·인증·채널 프로토콜은 그대로입니다. 시스템 오디오 모니터 모드의 원본 소리는 여전히 지연시키지 않습니다. 이번 수정은 MusicSync 자체의 로컬/클라이언트 재생에 해당합니다. CI는 네이티브 컴파일·시계 단위 변환·시작/underrun 보정·프로토콜 상호운용을 검증하지만, 실제 Windows 스피커 정렬은 실기기 비교가 필요합니다. 우선 내장/유선 스피커로 확인하세요. Bluetooth와 사운드 향상 기능에는 드라이버가 보고하지 않는 지연이 있을 수 있습니다. 문제 보고 시 호스트/클라이언트 역할·음원·출력 장치·대략적 시간차·RTT·버퍼·예약 오차·로그를 기록하면 원인 구분에 도움이 됩니다.
