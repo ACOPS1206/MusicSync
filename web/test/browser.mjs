@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import {encode,Framer,code,proof} from '../protocol.mjs';
 const cwd=resolve(new URL('..',import.meta.url).pathname),dir=mkdtempSync(join(tmpdir(),'musicsync-web-'));
-let host,gateway,browser,invite,approved=0,stats=0,confirmation=0,connections=0;
+let host,gateway,browser,page,invite,approved=0,stats=0,confirmation=0,connections=0;
 const hostID=randomUUID().toUpperCase(),secret=randomBytes(32).toString('base64');
 const clock=()=>Number(process.hrtime.bigint())/1e9;
 try{
@@ -43,7 +43,7 @@ try{
   let text='',errors='';gateway.stderr.on('data',x=>errors+=x);
   await new Promise((res,rej)=>{const timer=setTimeout(()=>rej(Error(`Gateway not ready ${errors}`)),15000);gateway.on('exit',x=>rej(Error(`Gateway exited ${x}: ${errors}`)));gateway.stdout.on('data',data=>{text+=data;const found=text.match(/Local: (https:\/\/localhost:\d+\/#\S+)/);if(found){invite=found[1];clearTimeout(timer);res()}})});
   browser=await chromium.launch({headless:true,args:['--autoplay-policy=no-user-gesture-required']});
-  const ctx=await browser.newContext({ignoreHTTPSErrors:true,locale:'en-US'});const page=await ctx.newPage();let pageErrors=[];page.on('pageerror',e=>pageErrors.push(e.message));
+  const ctx=await browser.newContext({ignoreHTTPSErrors:true,locale:'en-US'});page=await ctx.newPage();let pageErrors=[];page.on('pageerror',e=>pageErrors.push(e.message));
   await page.addInitScript(()=>{
     window.scheduled=[];const original=AudioContext.prototype.createBufferSource;
     AudioContext.prototype.createBufferSource=function(){const source=original.call(this),start=source.start.bind(source),c=this;source.start=(time,...args)=>{window.scheduled.push({time,now:c.currentTime,left:source.buffer?.getChannelData(0)[0],right:source.buffer?.getChannelData(1)[0]});return start(time,...args)};return source};
@@ -70,4 +70,4 @@ try{
   }
   assert.deepEqual(pageErrors,[]);console.log('PASS HTTPS/WSS access gate, native TLS exporter pairing, pre-approval gate, clock sync, timestamped PCM, stereo, bilingual UI, remembered pairing and host pin protection');
   await page.screenshot({path:join(cwd,'test','web-preview.png'),fullPage:true});
-}finally{await browser?.close();gateway?.kill('SIGTERM');host?.close();rmSync(dir,{recursive:true,force:true})}
+}catch(e){if(page){console.error('Browser state:',await page.evaluate(()=>({phase:document.querySelector('#phase')?.textContent,error:document.querySelector('#error')?.textContent,logs:document.querySelector('#logs')?.textContent})));await page.screenshot({path:join(cwd,'test','web-preview.png'),fullPage:true}).catch(()=>{})}throw e;}finally{await browser?.close();gateway?.kill('SIGTERM');host?.close();rmSync(dir,{recursive:true,force:true})}

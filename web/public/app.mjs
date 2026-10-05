@@ -78,4 +78,5 @@ $('hostVolume').onchange=()=>send({kind:'setHostVolume',volume:Number($('hostVol
 $('trim').oninput=()=>{if(player)player.trim=Number($('trim').value)/1000;$('trimValue').textContent=$('trim').value};
 $('identify').onclick=async()=>{await enableAudio();player.identify()};$('identifyHost').onclick=()=>{if(paired)send({kind:'identifyHost'})};
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&paired)log(tr('paused'));if(!document.hidden){player?.clear();buffer=new JitterBuffer();clock=new ClockEstimate();probeCount=0;start=now()}});
+window.addEventListener('hashchange',()=>{if(location.hash)unlock().catch(e=>error(e.message))});
 render();if(location.hash)unlock().catch(e=>error(e.message));else refresh().catch(e=>error(e.message));setInterval(()=>refresh().catch(()=>{}),5000);
