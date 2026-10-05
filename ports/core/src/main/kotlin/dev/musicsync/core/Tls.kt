@@ -3,6 +3,7 @@
 package dev.musicsync.core
 
 import org.bouncycastle.tls.*
+import org.bouncycastle.tls.crypto.TlsCryptoParameters
 import org.bouncycastle.tls.crypto.impl.jcajce.JcaTlsCryptoProvider
 import org.bouncycastle.tls.crypto.impl.jcajce.JcaDefaultTlsCredentialedSigner
 import org.bouncycastle.asn1.x500.X500Name
