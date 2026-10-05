@@ -38,7 +38,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: ${{ inputs.tag || 'v0.10.1' }}
-      RELEASE_SHA: ${{ inputs.source_sha || '4fe894d71de624608b688689fd5ae789720dbe61' }}
+      RELEASE_SHA: ${{ inputs.source_sha || github.sha }}
       APPLE_RUN: ${{ inputs.apple_run || '37285158399' }}
       WEB_RUN: ${{ inputs.web_run || '37285158539' }}
       PORTS_RUN: ${{ inputs.ports_run || '37292089304' }}
