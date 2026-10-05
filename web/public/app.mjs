@@ -6,7 +6,9 @@ for(const el of document.querySelectorAll('[data-t]'))words.ko[el.dataset.t]=el.
 let language=localStorage.getItem('musicsync.language')|| (navigator.language.startsWith('ko')?'ko':'en');
 const tr=k=>words[language][k]||words.en[k]||k;
 let ws,context,player,paired=false,wants=false,established=false,target='',phase='ready',clock=new ClockEstimate(),buffer=new JitterBuffer(),pings=new Set(),latency=.18,requested=.18,lastDrops=0,lastAudio=0,start=0,badSince=0,hostChannel='stereo',policy={},peers=[],rosterSignature='',attempt=0,retryTimer,connecting=false,lastPong=0,probeCount=0;
-let deviceID=localStorage.getItem('musicsync.deviceID');if(!deviceID){deviceID=crypto.randomUUID().toUpperCase();localStorage.setItem('musicsync.deviceID',deviceID)}
+// Reloading the web client starts a fresh pairing identity.
+localStorage.removeItem('musicsync.deviceID');
+const deviceID=crypto.randomUUID().toUpperCase();
 const logs=[];
 function log(text){logs.push(`${new Date().toLocaleTimeString()} ${text}`);if(logs.length>100)logs.shift();$('logs').textContent=logs.join('\n')}
 const reasons={

@@ -30,9 +30,18 @@ import java.util.concurrent.atomic.AtomicInteger
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
-interface Store { fun get(key: String): String?; fun put(key: String, value: String?); fun id(role: String): String = get("id.$role") ?: UUID.randomUUID().toString().uppercase().also { put("id.$role",it) } }
+fun pairingKey(key:String)=listOf("client.","host.","pin.","endpoint.","policy.").any{key.startsWith(it)}
+interface Store { fun clearPairings() {} ; fun get(key: String): String?; fun put(key: String, value: String?); fun id(role: String): String = get("id.$role") ?: UUID.randomUUID().toString().uppercase().also { put("id.$role",it) } }
+/** Keep identities persistent, but scope authorization and pins to one app session. */
+class SessionStore(private val persistent:Store):Store {
+    private val temporary=MemoryStore()
+    init { persistent.clearPairings() }
+    override fun get(key:String)=if(pairingKey(key))temporary.get(key)else persistent.get(key)
+    override fun put(key:String,value:String?){if(pairingKey(key))temporary.put(key,value)else persistent.put(key,value)}
+}
 class MemoryStore : Store {
     private val values = java.util.concurrent.ConcurrentHashMap<String,String>()
+    override fun clearPairings(){values.keys.filter{pairingKey(it)}.forEach{values.remove(it)}}
     override fun get(key: String) = values[key]
     override fun put(key: String, value: String?) { if (value == null) values.remove(key) else values[key] = value }
 }

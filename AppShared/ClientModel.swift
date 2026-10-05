@@ -211,7 +211,7 @@ struct NearbyMac: Identifiable {
         audioInterrupted = false
         sessionPhase = "Connecting"; health = SyncHealthMonitor(); meter = TrafficMeter(); syncIssues = []; traffic = TrafficSnapshot(); lastPong = 0; peakScheduleError = 0; monitorMode = false
         requestedLatency = 0.18; receivedLatency = 0.18; playbackDrops = 0; dropped = 0
-        let knownID = UserDefaults.standard.string(forKey:"tls.endpoint." + mac.name)
+        let knownID = PairingStore.read("endpoint." + mac.name)
         let expectedPin = knownID.flatMap { sessionPins[$0] ?? PairingStore.read("pin." + $0) }
         pairingHostID = knownID
         let trust = TLSClientTrust(expectedPin:expectedPin); tlsTrust = trust; tlsSession = nil; sentPairingProof = false; receivedChallenge = false; connectionFailure = nil
@@ -284,7 +284,7 @@ struct NearbyMac: Identifiable {
             if let secret = message.pairingSecret {
                 guard codeConfirmed, let pin = tlsTrust?.publicKeyPin, let data = Data(base64Encoded:secret), data.count == 32 else { securityFailure(tr("Confirm the matching code on both devices before approval.")); return }
                 sessionPins[hostID] = pin
-                if let name = selectedName { UserDefaults.standard.set(hostID,forKey:"tls.endpoint." + name) }
+                if let name = selectedName { try? PairingStore.write(hostID,account:"endpoint." + name) }
                 do { try PairingStore.write(pin,account:"pin." + hostID) } catch { pairingNotice = error.localizedDescription }
                 sessionSecrets[hostID] = secret
                 do { try PairingStore.write(secret,account:"client.tls2." + hostID) } catch { pairingNotice = error.localizedDescription }

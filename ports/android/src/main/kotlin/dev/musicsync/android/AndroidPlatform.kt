@@ -22,6 +22,9 @@ class AndroidStore(context:Context):Store {
         val gen=KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES,"AndroidKeyStore")
         gen.init(KeyGenParameterSpec.Builder("MusicSyncPairing",KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT).setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build());gen.generateKey()
     }}
+    @Synchronized override fun clearPairings(){
+        val update=prefs.edit();prefs.all.keys.filter{pairingKey(it)}.forEach{update.remove(it)};check(update.commit())
+    }
     @Synchronized override fun get(key:String):String? {val saved=prefs.getString(key,null)?:return null
         return runCatching{val bytes=Base64.getDecoder().decode(saved);require(bytes.size>12);val cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.DECRYPT_MODE,this.key,GCMParameterSpec(128,bytes.copyOfRange(0,12)));cipher.doFinal(bytes.copyOfRange(12,bytes.size)).toString(Charsets.UTF_8)}.getOrNull()
     }

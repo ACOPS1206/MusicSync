@@ -6,6 +6,18 @@ import java.net.*
 import java.util.concurrent.*
 import kotlin.concurrent.thread
 class CoreTest {
+    @Test fun pairingExpiresOnAppRestartButIdentitySurvives(){
+        val disk=MemoryStore();disk.put("tls.private","host-key");disk.put("id.host","host-id")
+        disk.put("client.legacy","old-secret");disk.put("pin.legacy","old-pin");disk.put("policy.legacy","old-grant")
+        val first=SessionStore(disk)
+        assertNull(first.get("client.legacy"));assertNull(disk.get("pin.legacy"));assertNull(disk.get("policy.legacy"))
+        first.put("client.host","session-secret");first.put("pin.host","session-pin");first.put("policy.client","grant")
+        assertEquals("session-secret",first.get("client.host"));assertNull(disk.get("client.host"))
+        val restarted=SessionStore(disk)
+        assertNull(restarted.get("client.host"));assertNull(restarted.get("pin.host"));assertNull(restarted.get("policy.client"))
+        assertEquals("host-key",restarted.get("tls.private"));assertEquals("host-id",restarted.get("id.host"))
+    }
+
     @Test fun swiftCompatibleFramingAndFloatPayload(){
         val m=Message("audio",sequence=1,epoch=2,pts=10.2,sampleRate=48000.0,channels=2,frames=2,payload=Wire.payload(floatArrayOf(.5f,-.5f,1f,0f)))
         val round=Wire.read(ByteArrayInputStream(Wire.encode(m)));assertTrue(round.validAudio());assertContentEquals(floatArrayOf(.5f,-.5f,1f,0f),round.samples())

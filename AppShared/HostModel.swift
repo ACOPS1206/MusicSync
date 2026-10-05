@@ -252,7 +252,7 @@ struct ConnectedDevice: Identifiable {
             devices[index].supportsVolumeControl = message.volumeControlVersion == 1
             devices[index].volume = VolumeControl.valid(message.volume) ?? 1
             devices[index].volumeScope = message.volumeScope == "system" ? "system" : "app"
-            if let data = UserDefaults.standard.data(forKey:volumePolicyKey(id)), let policy = try? JSONDecoder().decode(VolumePermissions.self,from:data) { devices[index].permissions = policy }
+            if let data = PairingStore.read(volumePolicyKey(id)).flatMap { $0.data(using:.utf8) }, let policy = try? JSONDecoder().decode(VolumePermissions.self,from:data) { devices[index].permissions = policy }
             devices[index].deviceID = id; devices[index].name = String((message.name ?? "MusicSync Client").prefix(80))
             devices[index].channelSelection = ChannelSelection(rawValue:message.channelSelection ?? "automatic") ?? .automatic
             var challenge = hostInfo("pairChallenge"); challenge.nonce = devices[index].nonce; peer.send(challenge)
@@ -352,7 +352,7 @@ struct ConnectedDevice: Identifiable {
         devices[index].gate.approve(); devices[index].pairingCode = nil
         if secret != nil {
             devices[index].permissions = VolumePermissions()
-            if let clientID = devices[index].deviceID { UserDefaults.standard.removeObject(forKey:volumePolicyKey(clientID)) }
+            if let clientID = devices[index].deviceID { try? PairingStore.remove(volumePolicyKey(clientID)) }
         }
         var approved = hostInfo("pairApproved"); approved.pairingSecret = secret
         approved.outputChannel = layout.remoteChannel.rawValue
@@ -375,7 +375,7 @@ struct ConnectedDevice: Identifiable {
         do { try PairingStore.remove("host.tls2." + clientID) }
         catch { pairingNotice = error.localizedDescription }
         revokedIDs.insert(clientID); sessionSecrets[clientID] = nil
-        UserDefaults.standard.removeObject(forKey:volumePolicyKey(clientID))
+        try? PairingStore.remove(volumePolicyKey(clientID))
         for other in devices where other.deviceID == clientID { rejectDevice(other.id) }
     }
     private func volumePolicyKey(_ clientID: String) -> String { "volumePolicy." + hostID + "." + clientID }
@@ -388,7 +388,7 @@ struct ConnectedDevice: Identifiable {
         if let value = peersMayControlClient { devices[index].permissions.peersMayControlClient = value }
         if let value = clientMayControlPeerDevices { devices[index].permissions.clientMayControlPeerDevices = value }
         if let value = peersMayControlClientDevice { devices[index].permissions.peersMayControlClientDevice = value }
-        if let data = try? JSONEncoder().encode(devices[index].permissions) { UserDefaults.standard.set(data,forKey:volumePolicyKey(clientID)) }
+        if let data = try? JSONEncoder().encode(devices[index].permissions) { try? PairingStore.write(String(decoding:data,as:UTF8.self),account:volumePolicyKey(clientID)) }
         if devices[index].volumeRequester == nil && !devices[index].permissions.hostMayControlClient {
             volumeTasks.removeValue(forKey:id)?.cancel(); devices[index].pendingVolume = nil; devices[index].volumeRequestID = nil
         }

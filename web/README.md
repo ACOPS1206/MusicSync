@@ -23,7 +23,7 @@ Start the native MusicSync host. Open the **invitation URL printed in the gatewa
 4. Start streaming on the host. Keep the browser tab visible and the phone unlocked.
 5. Choose Automatic / Stereo / Left / Right. Native hosts see each browser as a separate approved client, can set its channel and identify it. Host/peer volume and device control follow native host permissions. Web volume changes **app gain**, because browsers cannot change system speaker volume.
 
-`PORT` (default 8443), `MUSICSYNC_WEB_BIND` (default `0.0.0.0`) and `MUSICSYNC_WEB_DATA` (default `.local` relative to current working directory) configure the gateway. Keep that data directory private; it contains private keys and pairing secrets. To forget web pairings, stop the gateway and remove its `pairings.json`, then forget those clients on the host. Do not delete/recreate keys just to work around a trust error.
+`PORT` (default 8443), `MUSICSYNC_WEB_BIND` (default `0.0.0.0`) and `MUSICSYNC_WEB_DATA` (default `.local` relative to current working directory) configure the gateway. Keep that data directory private; it contains private keys and pairing secrets. Gateway pairings remain only in memory; restarting the gateway or reloading the browser requires reapproval. Legacy `pairings.json` is removed on startup. Do not delete/recreate keys just to work around a trust error.
 
 ## HTTPS certificate trust
 
@@ -80,3 +80,7 @@ From GitHub **Actions → Build MusicSync web → successful run → Artifacts**
 Dependencies: `ws` (MIT), `bonjour-service` (MIT); transitive packages retain their licenses in `node_modules`. Playwright (Apache-2.0) is test-only. MusicSync source remains MIT, with copyright/license notices preserved when redistributed.
 
 Only one tab per browser profile may connect at once; open a different browser profile for another independent client. This prevents duplicate device identities from repeatedly replacing each other. Native connection loss reconnects automatically after established pairing; initial failures are capped at three retries.
+
+## Session-only pairing
+
+Pairing is session-only: secrets, Host public-key pins and device permissions are kept in memory, never remembered after app restart. Existing persisted pairing records are removed on first launch of this version. Restarting either endpoint requires comparing the eight-digit code again and approving on the Host. Automatic reconnection within the same running session still uses TLS-bound proofs and a pinned key; a key change within that session requires explicitly forgetting the pairing. The Host TLS identity remains separately persistent; losing it is recoverable by restarting the Client and reapproving. TLS encryption is always required.

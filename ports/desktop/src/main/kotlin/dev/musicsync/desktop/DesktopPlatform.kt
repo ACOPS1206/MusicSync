@@ -13,6 +13,11 @@ class DesktopStore : Store {
     private val data = java.util.Properties()
     init {folder.mkdirs();protect(folder);if(file.exists())file.inputStream().use{data.load(it)}}
     private fun protect(f:File){runCatching{Files.setPosixFilePermissions(f.toPath(),java.nio.file.attribute.PosixFilePermissions.fromString(if(f.isDirectory)"rwx------"else"rw-------"))}}
+    @Synchronized override fun clearPairings(){
+        val keys=data.stringPropertyNames().filter{pairingKey(it)}
+        keys.forEach{data.remove(it)}
+        if(keys.isNotEmpty())put("id.client",data.getProperty("id.client"))
+    }
     @Synchronized override fun get(key:String)=data.getProperty(key)
     @Synchronized override fun put(key:String,value:String?){if(value==null)data.remove(key)else data.setProperty(key,value)
         val tmp=File(folder,"identity.tmp");tmp.createNewFile();protect(tmp);tmp.outputStream().use{data.store(it,"MusicSync private local identity; do not share")};Files.move(tmp.toPath(),file.toPath(),StandardCopyOption.REPLACE_EXISTING);protect(file)

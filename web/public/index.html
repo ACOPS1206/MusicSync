@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>MusicSync Web</title><link rel="stylesheet" href="/style.css"></head>
 <body><main>
-<header><div><h1 id="title">MusicSync</h1><p>Web · 0.10.0</p></div><select id="language" aria-label="Language"><option value="ko">한국어</option><option value="en">English</option></select></header>
+<header><div><h1 id="title">MusicSync</h1><p>Web · 0.10.3</p></div><select id="language" aria-label="Language"><option value="ko">한국어</option><option value="en">English</option></select></header>
 <p id="error" role="alert" hidden></p>
 <section id="access"><h2 data-t="access">게이트웨이 연결</h2><p data-t="inviteHelp">게이트웨이 터미널에 표시된 초대 링크를 이 기기에서 여세요. LAN 안에서만 동작합니다.</p><input id="invite" type="password" autocomplete="off" aria-label="Gateway invitation"><button id="unlock" data-t="unlock">초대로 연결</button></section>
 <section><h2 data-t="nearby">주변 호스트</h2><p id="address"></p><div class="row"><select id="hosts" aria-label="Nearby hosts"></select><button id="refresh" data-t="refresh">새로고침</button><button id="connect" data-t="connect">연결</button><button id="disconnect" data-t="disconnect">연결 해제</button></div><p id="phase" role="status"></p><div id="pairing" hidden><strong id="code"></strong><p data-t="pairHelp">호스트의 코드와 같은지 확인한 후, 호스트에서 이 기기를 승인하세요.</p><button id="confirm" data-t="confirm">코드가 일치합니다</button></div></section>

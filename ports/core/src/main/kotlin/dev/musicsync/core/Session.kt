@@ -34,7 +34,7 @@ class Session(val platform: Platform, private val discoveryEnabled: Boolean = tr
     val state = mutable.asStateFlow()
     private var snapshot = mutable.value
     private val logs = ArrayDeque<String>()
-    private val store = platform.store
+    private val store = SessionStore(platform.store)
     private val hostID = store.id("host"); private val clientID = store.id("client")
     private var identity: Identity? = null
     private var server: ServerSocket? = null
@@ -56,7 +56,7 @@ class Session(val platform: Platform, private val discoveryEnabled: Boolean = tr
     private val player = ScheduledPlayer { platform.sink() }
     private val discovery = Discovery({ found -> post { snapshot=snapshot.copy(nearby=found.filter { it.port != server?.localPort }); publish() } },{ reason -> post { log("Bonjour: $reason"); snapshot=snapshot.copy(error=reason); publish() } })
     init {
-        log("MusicSync 0.9.2 (14) · ${platform.name}")
+        log("MusicSync 0.9.3 (15) · ${platform.name}")
         if (discoveryEnabled) discovery.start()
         executor.scheduleAtFixedRate({ runCatching { tick() }.onFailure { fail(it) } },0,10,TimeUnit.MILLISECONDS)
     }

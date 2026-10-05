@@ -2,6 +2,7 @@
 // Copyright (c) 2026 ACOPS1206
 import Foundation
 import Network
+import Security
 import MusicSyncCore
 
 struct SmokeFailure: Error { let message: String }
@@ -31,6 +32,14 @@ struct SmokeFailure: Error { let message: String }
     }
     @MainActor static func require(_ condition: Bool, _ description: String) throws { if !condition { throw SmokeFailure(message:description) } }
     @MainActor static func main() async throws {
+        let account = "client.tls2." + UUID().uuidString
+        try PairingStore.write("session-only-test",account:account)
+        try require(PairingStore.read(account) == "session-only-test","Pairing must survive an in-process reconnect")
+        let lookup: [String:Any] = [kSecClass as String:kSecClassGenericPassword,
+            kSecAttrService as String:"dev.acops.MusicSync.pairing.v1",kSecAttrAccount as String:account]
+        try require(SecItemCopyMatching(lookup as CFDictionary,nil) == errSecItemNotFound,"Pairing must never be persisted in Keychain")
+        try PairingStore.remove(account)
+        try require(PairingStore.read(account) == nil,"Explicit forget must clear session pairing")
         try verifySystemVolumeEndpoint()
         try await clientRejectsUnverifiedApproval(wrongCode:false)
         try await clientRejectsUnverifiedApproval(wrongCode:true)

@@ -2,7 +2,7 @@
 import https from 'node:https';
 import tls from 'node:tls';
 import {randomBytes,timingSafeEqual,X509Certificate} from 'node:crypto';
-import {readFileSync,writeFileSync,mkdirSync,existsSync} from 'node:fs';
+import {readFileSync,unlinkSync,mkdirSync,existsSync} from 'node:fs';
 import {resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {networkInterfaces} from 'node:os';
@@ -12,8 +12,9 @@ import {Framer,encode,code,pin,proof,uuid} from './protocol.mjs';
 const here=dirname(fileURLToPath(import.meta.url));
 const dir=resolve(process.env.MUSICSYNC_WEB_DATA||'.local');mkdirSync(dir,{recursive:true,mode:0o700});
 const pairsPath=resolve(dir,'pairings.json');
-let pairs=existsSync(pairsPath)?JSON.parse(readFileSync(pairsPath,'utf8')):{};
-const save=()=>writeFileSync(pairsPath,JSON.stringify(pairs),{mode:0o600});
+// Forget legacy disk credentials; HTTPS certificates remain untouched.
+if(existsSync(pairsPath))unlinkSync(pairsPath);
+const pairs={};
 const invite=randomBytes(32).toString('base64url'), sessions=new Set(), targets=new Map(), activeIDs=new Map();
 const lanIP=Object.values(networkInterfaces()).flat().find(x=>x?.family==='IPv4'&&!x.internal)?.address||'127.0.0.1';
 const port=Number(process.env.PORT||8443), bind=process.env.MUSICSYNC_WEB_BIND||'0.0.0.0';
@@ -81,7 +82,7 @@ wss.on('connection',ws=>{
           send({kind:'pairPending',pairingCode:localCode,name:message.name,hostAddress:message.hostAddress||endpoint.address});
         }else if(message.kind==='pairApproved'){
           if(paired||message.hostID!==hostID)throw Error('Invalid approval');
-          if(message.pairingSecret){if(!confirmed||Buffer.from(message.pairingSecret,'base64').length!==32)throw Error('Confirm matching code before approval');pairs[key]={hostID,pin:actualPin,secret:message.pairingSecret};save()}
+          if(message.pairingSecret){if(!confirmed||Buffer.from(message.pairingSecret,'base64').length!==32)throw Error('Confirm matching code before approval');pairs[key]={hostID,pin:actualPin,secret:message.pairingSecret}}
           else if(!proved)throw Error('Pairing proof required');
           paired=true;clearTimeout(deadline);const {pairingSecret,...safe}=message;send({...safe,hostAddress:message.hostAddress||endpoint.address});
         }else if(message.kind==='pairRejected'){end('Host declined or expired pairing')}
