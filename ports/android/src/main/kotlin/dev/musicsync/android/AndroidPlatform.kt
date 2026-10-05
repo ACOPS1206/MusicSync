@@ -45,8 +45,10 @@ class AndroidSink:AudioSink {
     @Volatile private var stopped=false
     @Volatile private var bufferFrames=2880
     @Volatile private var observedUnderruns=0
+    @Volatile private var estimatedLatency=.06
+    private var submittedFrames=0L
     private val timestamp=AudioTimestamp()
-    override val latency get()=bufferFrames/48000.0
+    override val latency get()=estimatedLatency
     override val underruns get()=observedUnderruns
     override fun start(){
         owner=Thread.currentThread()
@@ -61,6 +63,7 @@ class AndroidSink:AudioSink {
         track=output
         output.setBufferSizeInFrames(maxOf(minimumFrames,2880))
         bufferFrames=output.bufferSizeInFrames
+        estimatedLatency=bufferFrames/48000.0
         if(!stopped)output.play()
     }
     override fun position():Pair<Long,Double>? {
@@ -75,7 +78,11 @@ class AndroidSink:AudioSink {
         bufferFrames=output.bufferSizeInFrames
         if(!output.getTimestamp(timestamp)||timestamp.framePosition<=0)return null
         val time=timestamp.nanoTime/1e9
-        if(time<Clock.now()-.5||time>Clock.now()+.05)return null
+        val observedAt=Clock.now()
+        if(time<observedAt-.5||time>observedAt+.05)return null
+        // Written-versus-presented frames expose route queues beyond the app buffer.
+        val pending=submittedFrames-timestamp.framePosition-(observedAt-time)*48000.0
+        estimatedLatency=maxOf(bufferFrames/48000.0,(pending/48000.0).coerceIn(0.0,2.0))
         return timestamp.framePosition to time
     }
     override fun write(samples:FloatArray){
@@ -84,6 +91,7 @@ class AndroidSink:AudioSink {
         while(offset<samples.size&&!stopped){
             val n=output.write(samples,offset,samples.size-offset,AudioTrack.WRITE_BLOCKING)
             if(n<=0){if(stopped)return;error("AudioTrack write failed: $n; underruns=$observedUnderruns; buffer=$bufferFrames frames")}
+            submittedFrames+=n/2
             offset+=n
         }
     }
