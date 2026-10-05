@@ -8,4 +8,4 @@ dependencies {
     api("org.jmdns:jmdns:3.6.1")
     testImplementation(kotlin("test"))
 }
-tasks.test { useJUnitPlatform() }
+tasks.test { useJUnitPlatform(); testLogging { events("failed"); exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL } }

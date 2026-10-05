@@ -1,7 +1,6 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 plugins { kotlin("jvm"); id("org.jetbrains.compose"); id("org.jetbrains.kotlin.plugin.compose") }
-kotlin { jvmToolchain(17) }
-sourceSets.main { java.srcDir("../ui") }
+kotlin { jvmToolchain(17); sourceSets.main { kotlin.srcDir("../ui") } }
 dependencies {
     implementation(project(":core"))
     implementation(compose.desktop.currentOs)

@@ -2,13 +2,26 @@ name: Build MusicSync ports
 on:
   push:
     paths: ['ports/**', '.github/workflows/ports.yml', 'scripts/test_ports_interop.sh', 'scripts/PortsInterop.swift']
+  pull_request:
+    paths: ['ports/**', '.github/workflows/ports.yml', 'scripts/test_ports_interop.sh', 'scripts/PortsInterop.swift']
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: musicsync-ports-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  core:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            name: Windows
+          - os: ubuntu-24.04
+            name: Linux
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -18,11 +31,80 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - name: Compile and test real TLS, framing, synchronization and PCM
+      - name: Linux packaging dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y fakeroot rpm libasound2-dev
+      - name: Build Windows WASAPI loopback bridge
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake -S ports/native -B ports/native/build -A x64
+          cmake --build ports/native/build --config Release
+          New-Item -ItemType Directory -Force ports/desktop/src/main/resources/native
+          Copy-Item ports/native/build/Release/musicsync_capture.dll ports/desktop/src/main/resources/native/
+      - name: Test TLS and audio, compile Expressive UI, build installers
         working-directory: ports
-        run: gradle -PwithAndroid=false :core:test --stacktrace --console=plain
+        run: gradle -PwithAndroid=false :core:test :desktop:packageDistributionForCurrentOS --stacktrace --console=plain
+      - name: Package portable app including its Java runtime
+        shell: bash
+        run: python3 ports/package_desktop.py '${{ matrix.name }}'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicSync-${{ matrix.name }}
+          path: |
+            dist/MusicSync-${{ matrix.name }}.zip
+            ports/desktop/build/compose/binaries/main/msi/*.msi
+            ports/desktop/build/compose/binaries/main/deb/*.deb
+            ports/desktop/build/compose/binaries/main/rpm/*.rpm
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: MusicSync-port-tests
+          name: MusicSync-${{ matrix.name }}-tests
           path: ports/core/build/reports/tests/
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android 36 SDK
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Build installable Android APK with Expressive UI
+        working-directory: ports
+        run: gradle :android:assembleDebug --stacktrace --console=plain
+      - name: Verify APK signing and layout
+        run: |
+          mkdir -p dist
+          cp ports/android/build/outputs/apk/debug/android-debug.apk dist/MusicSync-Android.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify dist/MusicSync-Android.apk
+          unzip -l dist/MusicSync-Android.apk | tee dist/android-layout.txt
+          test -s dist/MusicSync-Android.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicSync-Android
+          path: dist/MusicSync-Android.apk
+          if-no-files-found: error
+  apple-interop:
+    runs-on: macos-26
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Test Kotlin Host against Swift Network.framework Client
+        run: bash scripts/test_ports_interop.sh
