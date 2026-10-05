@@ -1,9 +1,9 @@
 name: Build MusicSync ports
 on:
   push:
-    paths: ['ports/**', '.github/workflows/ports.yml', 'scripts/test_ports_interop.sh', 'scripts/PortsInterop.swift', 'scripts/PortsInteropHost.swift']
+    paths: ['ports/**', 'Shared/MusicSyncCore/**', '.github/workflows/ports.yml', 'scripts/test_ports_interop.sh', 'scripts/PortsInterop.swift', 'scripts/PortsInteropHost.swift']
   pull_request:
-    paths: ['ports/**', '.github/workflows/ports.yml', 'scripts/test_ports_interop.sh', 'scripts/PortsInterop.swift', 'scripts/PortsInteropHost.swift']
+    paths: ['ports/**', 'Shared/MusicSyncCore/**', '.github/workflows/ports.yml', 'scripts/test_ports_interop.sh', 'scripts/PortsInterop.swift', 'scripts/PortsInteropHost.swift']
   workflow_dispatch:
 permissions:
   contents: read
