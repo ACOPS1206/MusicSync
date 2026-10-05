@@ -56,10 +56,19 @@ class CoreTest {
         val device=session.state.value.devices.single().id
         session.approve(device);Thread.sleep(50);assertFalse(session.state.value.devices.single().approved)
         peer.send(Message("pairConfirm",pairingCode=peer.code));waitFor{session.state.value.devices.single().confirmed}
-        session.approve(device);assertNotNull(receive("pairApproved").pairingSecret)
+        session.approve(device);val approval=receive("pairApproved");val secret=requireNotNull(approval.pairingSecret);val hostID=requireNotNull(approval.hostID)
         peer.send(Message("setHostVolume",volume=.4,requestID="denied"));assertEquals(false,receive("volumeResult").accepted)
         session.setPermissions(device,Permissions(clientMayControlHost=true));receive("volumePolicy")
         peer.send(Message("setHostVolume",volume=.4,requestID="accepted"));assertEquals(true,receive("volumeResult").accepted);waitFor{session.state.value.volume==.4};assertEquals(.4,session.state.value.volume)
-        peer.close();session.close()
+        peer.close();waitFor{session.state.value.devices.isEmpty()};messages.clear()
+        val remembered=SecurePeer.client(Socket("127.0.0.1",port),peer.pin);remembered.onMessage={messages.offer(it)};remembered.start()
+        remembered.send(Message("hello",pairingVersion=2,deviceID=id,name="Remembered Client",volumeControlVersion=1,volume=1.0))
+        val challenge=receive("pairChallenge");val nonce=requireNotNull(challenge.nonce)
+        assertNotEquals(peer.binding,remembered.binding)
+        remembered.send(Message("pairProof",pairingProof=Pairing.proof(secret,nonce,hostID,id,peer.binding)))
+        assertEquals(remembered.code,receive("pairPending").pairingCode) // proof replay on a different TLS connection is rejected
+        remembered.send(Message("pairProof",pairingProof=Pairing.proof(secret,nonce,hostID,id,remembered.binding)))
+        val resumed=receive("pairApproved");assertNull(resumed.pairingSecret);assertEquals(true,resumed.allowClientHostVolume)
+        remembered.close();session.close()
     }
 }

@@ -45,6 +45,7 @@ class Session(val platform: Platform, private val discoveryEnabled: Boolean = tr
     private var hostKey = ""; private var nonce = ""; private var proved = false
     private var clock = ClockEstimate(); private var buffer = JitterBuffer()
     private var pairedAt = 0.0; private var lastAudio = 0.0; private var warningSince = 0.0
+    private var requestedLatency=.18;private var lastReportedDrops=0
     private var lastPong = 0.0; private var pingCount = 0; private var lastReport = 0.0; private val pings = mutableSetOf<Double>()
     private var clientCanBeControlled = false; private var peersCanControlVolume = false; private var peersCanControlDevice = false
     private var hostChannel = "stereo"; private var channelSelection = "automatic"
@@ -122,7 +123,7 @@ class Session(val platform: Platform, private val discoveryEnabled: Boolean = tr
                 val peer=SecurePeer.client(socket,pin)
                 post {
                     if(token!=generation||!wantsConnection){peer.close();return@post}
-                    client=peer;clock=ClockEstimate();buffer=JitterBuffer();pings.clear();pingCount=0;lastPong=Clock.now();lastAudio=0.0;lastReport=0.0;proved=false
+                    client=peer;clock=ClockEstimate();buffer=JitterBuffer();pings.clear();pingCount=0;lastPong=Clock.now();lastAudio=0.0;lastReport=0.0;requestedLatency=.18;lastReportedDrops=0;proved=false
                     snapshot=snapshot.copy(connected=true,paired=false,phase="Authenticating",hostName=host.name,code="",confirmed=false,warning="",peers=emptyList())
                     peer.onMessage={m->post{if(client===peer)handleClient(m)}};peer.onClose={reason->post{if(client===peer)lost(reason)}};peer.start()
                     peer.send(Message("hello",pairingVersion=2,deviceID=clientID,name=platform.name,channelSelection=channelSelection,volumeControlVersion=1,volume=volume(),volumeScope=snapshot.volumeScope))
@@ -316,7 +317,11 @@ class Session(val platform: Platform, private val discoveryEnabled: Boolean = tr
             if(now-lastPong>5){lost("Host clock timed out");return}
             if(clock.ready){buffer.take(now,clock.offset).forEach{player.schedule(it.samples(),it.pts!!-clock.offset)}
                 if(now-lastPublish>=.25){
-                    val requested=max(.18,clock.rtt/2+4*clock.jitter+player.outputLatency+.07).coerceAtMost(.5)
+                    val drops=buffer.drops+player.drops
+                    if(drops>lastReportedDrops)requestedLatency=(max(latency,requestedLatency)+.02).coerceAtMost(.5)
+                    lastReportedDrops=drops
+                    requestedLatency=max(requestedLatency,max(.18,clock.rtt/2+4*clock.jitter+player.outputLatency+.07)).coerceAtMost(.5)
+                    val requested=requestedLatency
                     client?.send(Message("stats",rtt=clock.rtt,offset=clock.offset,jitter=clock.jitter,latency=max(latency,requested),playbackState=snapshot.phase,
                         outputChannel=effectiveChannel(),channelSelection=channelSelection,dropped=buffer.drops+player.drops,schedulingError=player.error,bufferCount=buffer.size))
                 }

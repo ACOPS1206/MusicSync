@@ -1,9 +1,9 @@
 name: Build MusicSync ports
 on:
   push:
-    paths: ['ports/**', '.github/workflows/ports.yml', 'scripts/test_ports_interop.sh', 'scripts/PortsInterop.swift']
+    paths: ['ports/**', '.github/workflows/ports.yml', 'scripts/test_ports_interop.sh', 'scripts/PortsInterop.swift', 'scripts/PortsInteropHost.swift']
   pull_request:
-    paths: ['ports/**', '.github/workflows/ports.yml', 'scripts/test_ports_interop.sh', 'scripts/PortsInterop.swift']
+    paths: ['ports/**', '.github/workflows/ports.yml', 'scripts/test_ports_interop.sh', 'scripts/PortsInterop.swift', 'scripts/PortsInteropHost.swift']
   workflow_dispatch:
 permissions:
   contents: read
@@ -108,5 +108,5 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - name: Test Kotlin Host against Swift Network.framework Client
+      - name: Test bidirectional Swift / Kotlin TLS pairing and scheduled PCM
         run: bash scripts/test_ports_interop.sh

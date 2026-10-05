@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
+import android.net.wifi.WifiManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -14,6 +15,9 @@ import androidx.core.content.ContextCompat
 import dev.musicsync.ui.MusicSyncApp
 
 class MainActivity:ComponentActivity() {
+    private var discoveryLock:WifiManager.MulticastLock?=null
+    override fun onStart(){super.onStart();discoveryLock=applicationContext.getSystemService(WifiManager::class.java).createMulticastLock("MusicSync nearby Hosts").also{it.setReferenceCounted(false);it.acquire()}}
+    override fun onStop(){discoveryLock?.release();discoveryLock=null;super.onStop()}
     private val file=registerForActivityResult(ActivityResultContracts.OpenDocument()){uri->if(uri!=null){runCatching{contentResolver.takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION)};service();Runtime.session.streamFile(uri.toString())}}
     private val projection=registerForActivityResult(ActivityResultContracts.StartActivityForResult()){result->if(result.resultCode==Activity.RESULT_OK&&result.data!=null){ContextCompat.startForegroundService(this,Intent(this,SessionService::class.java).putExtra("projectionResult",result.resultCode).putExtra("projectionData",result.data))}}
     private val microphone=registerForActivityResult(ActivityResultContracts.RequestPermission()){granted->if(granted)projection.launch(getSystemService(MediaProjectionManager::class.java).createScreenCaptureIntent())}

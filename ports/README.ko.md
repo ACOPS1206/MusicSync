@@ -19,7 +19,7 @@
 
 **시스템 오디오 공유는 모니터 모드입니다.** Windows는 기본 출력의 WASAPI 루프백, Linux는 PulseAudio/PipeWire-Pulse 기본 sink의 monitor(`pactl`/`parec`), Android는 사용자 승인 MediaProjection과 AudioPlaybackCapture를 사용합니다. Android는 자신의 UID를 제외하며 원본 앱이 캡처를 허용해야 합니다. DRM은 무음일 수 있습니다. 세 포트의 시스템 공유는 원본 앱의 로컬 출력을 지연/음소거하지 않으므로 **호스트 스피커가 먼저 들립니다**. 중복 로컬 재생도 추가하지 않습니다. 호스트까지 맞추려면 WAV 호스팅을 사용하세요. Windows/Linux 모니터는 프로세스 제외가 아니어서 호스트 식별음도 캡처될 수 있습니다.
 
-32개 시계 표본 중 RTT가 낮은 8개로 호스트-클라이언트 오프셋을 추정합니다. 8개 유효 표본 이후 오디오를 최대 100패킷의 지터 버퍼에 넣고, timestamp를 변환해 예약 재생합니다. 중복·과거 epoch·늦은 패킷은 버립니다. 공통 지연은 180ms에서 시작해 클라이언트의 네트워크·출력 요구에 따라 최대 500ms까지 늘어나며 재생 중에는 줄이지 않습니다. Float32 little-endian/base64 payload와 4바이트 big-endian 길이+JSON 형식은 Swift와 동일합니다.
+32개 시계 표본 중 RTT가 낮은 8개로 호스트-클라이언트 오프셋을 추정합니다. 8개 유효 표본 이후 오디오를 최대 100패킷의 지터 버퍼에 넣고, timestamp를 변환해 예약 재생합니다. 중복·과거 epoch·늦은 패킷은 버립니다. 공통 지연은 180ms에서 시작해 클라이언트의 네트워크·출력 요구와 새 지각/드롭 발생 시 20ms 증가 요청에 따라 최대 500ms까지 늘어나며 재생 중에는 줄이지 않습니다. Float32 little-endian/base64 payload와 4바이트 big-endian 길이+JSON 형식은 Swift와 동일합니다.
 
 Android는 AudioTrack 하드웨어 timestamp, 데스크톱은 JavaSound의 처리 프레임 카운터와 monotonic 시계를 사용합니다. 침묵을 포함한 연속 프레임 타임라인을 유지하며 1초 간격으로 출력 시각을 보정합니다. 데스크톱 카운터 정확도는 드라이버에 영향을 받습니다. 지속적인 가변 리샘플링 PLL이 없어 하드웨어 드리프트나 정체로 작은 공백/드롭이 생길 수 있습니다. ±30ms 수동 보정이 있습니다. **180~250ms는 정상 LAN에서의 설계 지연 예산이며, 실측값이나 ±3ms 음향 정확도 보장이 아닙니다.** Bluetooth·Wi-Fi 비대칭·출력 경로가 영향을 줍니다. 데스크톱 출력 장치 변경 후에는 재연결/재시작하세요.
 
@@ -59,6 +59,6 @@ Windows 캡처 DLL 빌드·포함 명령은 [영문 빌드 설명](README.md#bui
 
 Windows 실행 파일은 Authenticode 서명하지 않습니다. Android debug APK는 테스트용이며 CI runner의 debug 서명 키가 달라지면 업데이트 설치 대신 기존 앱 삭제 후 설치·재페어링이 필요할 수 있습니다. 정식 배포에는 유지되는 별도 서명 키를 사용해야 합니다. 기존 Apple workflow는 IPA/Mac 앱을 따로 계속 생성합니다.
 
-CI에서 컴파일·패키징·APK 서명/구조·데스크톱 실행 파일/Java 포함·실제 TLS exporter/공개키/HMAC·PCM·시계·버퍼·WAV 테스트와 **Kotlin 호스트↔Swift Network.framework 클라이언트** 연결을 확인합니다. 실제 Android/Windows/Linux 스피커, 캡처 권한·방화벽·Bonjour 및 음향 싱크는 실기기 검증이 남습니다.
+CI에서 컴파일·패키징·APK 서명/구조·데스크톱 실행 파일/Java 포함·실제 TLS exporter/공개키/HMAC·PCM·시계·버퍼·WAV 테스트와 **Kotlin 호스트→Swift 클라이언트 및 Swift 호스트→Kotlin 클라이언트의 실제 예약 PCM** 연결을 확인합니다. 실제 Android/Windows/Linux 스피커, 캡처 권한·방화벽·Bonjour 및 음향 싱크는 실기기 검증이 남습니다.
 
 MusicSync는 MIT입니다. 포트의 Compose/Kotlin·Bouncy Castle·JmDNS·JNA·miniaudio와 포함 Java 런타임에는 각자 라이선스가 적용됩니다. [제3자 고지](THIRD_PARTY_NOTICES.md)를 확인하세요. Apple 프레임워크가 제공하던 UI·TLS exporter·DNS-SD·Windows 캡처를 새 플랫폼에서 구현하기 위한 의존성이며 Expressive alpha API는 버전을 고정합니다.

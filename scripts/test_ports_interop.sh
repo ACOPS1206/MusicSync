@@ -15,3 +15,16 @@ for i in $(seq 1 90); do
     sleep 2
 done
 dist/port-interop/swift-client
+kill "$HOST_PID" 2>/dev/null || true
+xcrun swiftc -I "$CORE_BIN/Modules" scripts/PortsInteropHost.swift "$CORE_BIN"/MusicSyncCore.build/*.swift.o -o dist/port-interop/swift-host
+dist/port-interop/swift-host > dist/port-interop/swift-host.log 2>&1 &
+SWIFT_PID=$!
+trap 'kill "$HOST_PID" "$SWIFT_PID" 2>/dev/null || true' EXIT
+for i in $(seq 1 30); do
+    if rg -q 'READY' dist/port-interop/swift-host.log; then break; fi
+    if ! kill -0 "$SWIFT_PID" 2>/dev/null; then cat dist/port-interop/swift-host.log; exit 1; fi
+    sleep 1
+done
+(cd ports && gradle -PwithAndroid=false -PinteropPort=client :desktop:interop --console=plain)
+wait "$SWIFT_PID"
+cat dist/port-interop/swift-host.log
