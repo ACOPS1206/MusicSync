@@ -31,9 +31,10 @@ struct SmokeFailure: Error { let message: String }
     }
     @MainActor static func require(_ condition: Bool, _ description: String) throws { if !condition { throw SmokeFailure(message:description) } }
     @MainActor static func main() async throws {
+        try verifySystemVolumeEndpoint()
         try await clientRejectsUnverifiedApproval(wrongCode:false)
         try await clientRejectsUnverifiedApproval(wrongCode:true)
-        let host = HostModel(); host.outputVolume = .nan; try require(host.outputVolume == 0,"Nonfinite local volume must clamp without recursion"); host.outputVolume = 1; host.directOnly = true; host.startHost(localEndpoint:.hostPort(host:.ipv4(.loopback),port:.any))
+        let host = HostModel(volumeEndpoint:VolumeEndpoint(playbackOnly:true)); host.outputVolume = .nan; try require(host.outputVolume == 0,"Nonfinite local volume must clamp without recursion"); host.outputVolume = 1; host.directOnly = true; host.startHost(localEndpoint:.hostPort(host:.ipv4(.loopback),port:.any))
         defer { for device in host.devices where device.gate.approved { host.forgetDevice(device.id) }; host.stopHost() }
         try await wait("listener") { host.active && host.listeningPort != nil }
         let number = try unwrap(host.listeningPort)
@@ -126,6 +127,24 @@ struct SmokeFailure: Error { let message: String }
         host.identifyDevice(firstID)
         try await wait("targeted identification") { first.last("identify") != nil }
         try require(second.last("identify") == nil,"Identification must not be broadcast to another device")
+        var peerChannel = Message("setPeerChannel"); peerChannel.targetPeerID = secondID; peerChannel.channelSelection = "left"
+        first.peer.send(peerChannel); try await wait("peer channel denied by default") { first.last("peerControlDenied") != nil }
+        try require(second.last("setChannel") == nil,"Peer channel control requires both permissions")
+        host.setVolumePermissions(firstID,clientMayControlPeerDevices:true)
+        host.setVolumePermissions(secondID,peersMayControlClientDevice:true)
+        try await wait("peer control roster") { first.last("volumePeers")?.volumePeers?.contains(where: { $0.id == secondID && $0.canControlDevice == true }) == true }
+        first.peer.send(peerChannel); try await wait("relayed channel") { second.last("setChannel")?.channelSelection == "left" }
+        var peerChannelAck = Message("channelReport"); peerChannelAck.channelSelection = "left"; peerChannelAck.outputChannel = "left"; peerChannelAck.playbackState = "Streaming"; peerChannelAck.requestID = second.last("setChannel")?.requestID; second.peer.send(peerChannelAck)
+        try await wait("reported channel roster") { first.last("volumePeers")?.volumePeers?.contains(where: { $0.id == secondID && $0.outputChannel == "left" && $0.playbackState == "Streaming" }) == true }
+        let firstIdentifyCount = first.messages.filter { $0.kind == "identify" }.count
+        var peerIdentify = Message("identifyPeer"); peerIdentify.targetPeerID = secondID; first.peer.send(peerIdentify)
+        try await wait("peer identification") { second.last("identify")?.targetPeerID == firstID }
+        try require(first.messages.filter { $0.kind == "identify" }.count == firstIdentifyCount,"Peer identification must target only the requested device")
+        host.setVolumePermissions(firstID,clientMayControlPeerDevices:false)
+        let secondChannelCount = second.messages.filter { $0.kind == "setChannel" }.count
+        peerChannel.channelSelection = "right"; first.peer.send(peerChannel); try await Task.sleep(nanoseconds:150_000_000)
+        try require(second.messages.filter { $0.kind == "setChannel" }.count == secondChannelCount,"Revoked peer channel permission must block relays")
+        try require(!AppLog.shared.entries.contains(where: { $0.text.contains(secret) || $0.text.contains(confirmation.pairingCode ?? "not-a-code") }),"Diagnostics must not record pairing secrets or codes")
         first.peer.cancel()
         try await wait("first closed") { !host.devices.contains { $0.id == firstID } }
         let reconnect = Probe(port:port,deviceID:first.deviceID); defer { reconnect.peer.cancel() }
@@ -152,7 +171,19 @@ struct SmokeFailure: Error { let message: String }
         revoked.peer.send(invalid)
         try await wait("revoked requires approval") { revoked.last("pairPending") != nil }
         try require(revoked.last("pairApproved") == nil,"Removed pairing must not authenticate")
-        print("Verified volume authorization, relay and queued revocation; real TLS 1.3, exporter code confirmation, Host approval gate, channel acknowledgment, targeted identify, remembered reconnect and revocation.")
+        print("Verified system-volume read/write/failure, secret-free logs, peer channel/identify permissions, volume relay and queued revocation; real TLS 1.3, exporter code confirmation, Host approval gate, channel acknowledgment, targeted identify, remembered reconnect and revocation.")
+    }
+    @MainActor static func verifySystemVolumeEndpoint() throws {
+        var hardware = 0.4; var writes = 0; var writable = true
+        let endpoint = VolumeEndpoint(read:{ (hardware,writable) },write:{ value in guard writable else { return false }; writes += 1; hardware = value; return true })
+        let model = HostModel(volumeEndpoint:endpoint)
+        try require(model.volumeScope == "system" && model.outputVolume == 0.4 && writes == 0,"Initial hardware volume must be read without changing it")
+        model.outputVolume = 0.7
+        try require(hardware == 0.7 && writes == 1,"System slider must change hardware through its endpoint")
+        hardware = 0.2; model.refreshOutputVolume()
+        try require(model.outputVolume == 0.2 && writes == 1,"Hardware button changes must refresh without a feedback write")
+        writable = false; model.refreshOutputVolume(); model.outputVolume = 0.9
+        try require(!model.volumeAvailable && model.outputVolume == 0.2 && hardware == 0.2 && model.error != nil,"Unsupported system volume must fail visibly without claiming success")
     }
     @MainActor static func verifyHostVolume(_ host: HostModel, probe: Probe, id: UUID, volume: Double, accepted: Bool) async throws {
         let request = UUID().uuidString

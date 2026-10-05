@@ -19,8 +19,11 @@ struct HelpView: View {
                     Text("TLS 1.3 encrypts initial pairing, audio, clock messages and device controls. The comparison code is computed independently from each TLS connection. After approval the Client pins the Host public key. Bonjour names and addresses remain visible. If Keychain saving is unavailable, encryption still works for this session; restart may require reapproval or forgetting a changed Host key.")
                 }
                 Section("Volume & permissions") {
-                    Text("These sliders adjust MusicSync playback only. System volume remains controlled by the device buttons or system settings.")
+                    Text("Mac system volume affects all sound on the selected output device. iPhone remote controls adjust MusicSync playback; change iPhone system volume directly using the native slider or buttons.")
                     Text("The Host manages permissions for each paired Client. Host-to-Client volume control is enabled by default; Client-to-Host and Client-to-Client control are disabled by default. To let one Client adjust another, allow control on the sender and reception on the target. Revoking permission blocks new requests immediately. Your own local volume is always adjustable.")
+                }
+                Section("Connected Devices") {
+                    Text("Connected Clients show their reported left, right or stereo channel and playback state. To change their channel or play an identification tone, the Host must enable device-control permission on both the controlling Client and the target. These permissions are separate from volume control and off by default.")
                 }
                 Section("Stereo pair") {
                     Text("In stereo pair mode, Test Tone plays a shared alignment pulse, then a lower left-only tone, then a higher right-only tone each second.")
@@ -57,10 +60,13 @@ struct HelpView: View {
                 }
                 Section("License & attribution") {
                     Text("MusicSync by ACOPS1206")
-                    LabeledContent("App version",value:(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "—") + " (" + (Bundle.main.object(forInfoDictionaryKey:"CFBundleVersion") as? String ?? "—") + ")")
+                    LabeledContent("App version",value:AppVersion.display)
                     Text("MIT License. Commercial use, modification and redistribution are allowed. Keep the copyright notice and license with copies or substantial portions. Derivative source disclosure is not required.")
                     Link("Source code", destination: URL(string: "https://github.com/ACOPS1206/MusicSync")!)
                     Link("Full license", destination: URL(string: "https://github.com/ACOPS1206/MusicSync/blob/main/LICENSE")!)
+                }
+                Section("Logs & version") {
+                    Text("Open Logs from the top toolbar to see connection, pairing, playback, synchronization warnings and device controls. Copy Logs includes the app version and OS version. Logs are limited to 300 events in memory and disappear when the app exits. Pairing codes, keys, proofs and audio payloads are not recorded. Review device names and LAN addresses before sharing logs.")
                 }
                 Section("Language") {
                     Picker("App language", selection: $appLanguage) {

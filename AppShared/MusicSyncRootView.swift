@@ -24,6 +24,7 @@ struct MusicSyncRootView: View {
             Tab("Listen", systemImage: "speaker.wave.2", value: 0) { ClientView(model: client) }
             Tab("Host", systemImage: "antenna.radiowaves.left.and.right", value: 1) { HostView(model: host) }
         }
+        .onReceive(Timer.publish(every:1,on:.main,in:.common).autoconnect()) { _ in host.refreshOutputVolume(); client.refreshOutputVolume() }
         #if os(iOS)
         .onReceive(Timer.publish(every:5,on:.main,in:.common).autoconnect()) { _ in liveActivity.report(liveSnapshot,enabled:liveEnabled) }
         .onChange(of: liveSnapshot) { _, snapshot in liveActivity.report(snapshot,enabled:liveEnabled) }

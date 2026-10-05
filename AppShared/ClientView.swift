@@ -5,12 +5,14 @@
 import SwiftUI
 struct ClientView: View {
     @State private var showingHelp = false
+    @State private var showingLogs = false
     @ObservedObject var model: ClientModel
     var body: some View {
         NavigationStack {
             Form {
                 Section {
                     Label(model.status,systemImage:model.connected ? "waveform" : "wifi")
+                    AppVersionView()
                     if !model.searching {
                         Text("Allow Local Network access to find a Host and receive audio directly over Wi-Fi. MusicSync does not use an internet server or your microphone.").foregroundStyle(.secondary)
                         Button("Find Nearby Hosts") { model.search() }.buttonStyle(.glassProminent)
@@ -109,10 +111,13 @@ struct ClientView: View {
                 if let error = model.error { Section("Attention") { Text(error).foregroundStyle(.red) } }
                 ProjectLinkView()
             }.navigationTitle(sessionTitle(model.sessionPhase))
-            .toolbar { ToolbarItem(placement: .primaryAction) {
+            .toolbar {
+                ToolbarItem(placement:.primaryAction) { Button { showingLogs = true } label: { Label("Logs",systemImage:"list.bullet.rectangle") } }
+                ToolbarItem(placement: .primaryAction) {
                 Button { showingHelp = true } label: { Label("Help", systemImage: "questionmark.circle") }
             } }
             .sheet(isPresented: $showingHelp) { HelpView() }
+            .sheet(isPresented: $showingLogs) { DiagnosticsView() }
         }
     }
 }

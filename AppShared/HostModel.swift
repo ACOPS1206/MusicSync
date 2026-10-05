@@ -31,6 +31,7 @@ struct ConnectedDevice: Identifiable {
     var pairingCode: String?
     var clientConfirmed = false
     var supportsVolumeControl = false
+    var volumeScope = "app"
     var volume = 1.0
     var permissions = VolumePermissions()
     var pendingVolume: Double?
@@ -40,14 +41,19 @@ struct ConnectedDevice: Identifiable {
     var effectiveChannel = OutputChannel.stereo
     var pendingChannel: ChannelSelection?
     var channelRequestID: String?
+    var channelRequester: UUID?
+    var identifyRequester: UUID?
     var identifyingUntil = Date.distantPast
     var lastIdentify = Date.distantPast
 }
 
 @MainActor final class HostModel: ObservableObject {
     @Published var sessionID = UUID()
-    @Published var sessionPhase = "Waiting"
-    @Published var syncIssues: [SyncIssue] = []
+    @Published var sessionPhase = "Waiting" { didSet { if sessionPhase != oldValue { AppLog.shared.record("Host",tr(sessionPhase)) } } }
+    @Published var syncIssues: [SyncIssue] = [] { didSet {
+        guard syncIssues != oldValue else { return }
+        AppLog.shared.record("Host",syncIssues.isEmpty ? tr("Sync warnings cleared") : String(format:tr("Sync warnings: %@"),syncIssues.map(\.rawValue).joined(separator:", ")),level:syncIssues.isEmpty ? .info : .warning)
+    } }
     @Published var syncWarmupRemaining = SyncHealthPolicy.warmupDuration
     @Published var healthInput = SyncHealthInput()
     @Published var traffic = TrafficSnapshot()
@@ -65,7 +71,7 @@ struct ConnectedDevice: Identifiable {
     @Published private(set) var listeningPort: UInt16?
     @Published var connectionAddress = ""
     @Published var serviceName = ""
-    @Published var pairingNotice: String?
+    @Published var pairingNotice: String? { didSet { if let pairingNotice, pairingNotice != oldValue { AppLog.shared.record("Host",pairingNotice,level:.warning) } } }
     private var tlsIdentity: TLSIdentity?
     @Published var encryptionPin = ""
     private let hostID = PairingStore.identity("host")
@@ -74,18 +80,37 @@ struct ConnectedDevice: Identifiable {
     private let identifierSound = IdentificationSound()
     @Published var streaming = false
     @Published var busy = false
-    @Published var status = tr("Ready")
-    @Published var error: String?
+    @Published var status = tr("Ready") { didSet { if status != oldValue { AppLog.shared.record("Host",status) } } }
+    @Published var error: String? { didSet { if let error, error != oldValue { AppLog.shared.record("Host",error,level:.error) } } }
     @Published var devices: [ConnectedDevice] = []
     @Published var latency = 0.18
     @Published var mode = 0 { didSet { if mode == 1 { layout = .stereo } } }
     @Published var fileURL: URL?
     @Published var fileName = ""
     @Published var layout = SpeakerLayout.stereo { didSet { player.channel = layout.localChannel; sendLayout() } }
+    private let volumeEndpoint: VolumeEndpoint
+    private var refreshingVolume = false
+    @Published private(set) var volumeAvailable = true
+    var volumeScope: String { volumeEndpoint.scope }
+    func refreshOutputVolume() {
+        guard volumeScope == "system" else { return }
+        let reading = volumeEndpoint.read(); volumeAvailable = reading?.writable ?? false
+        if let value = reading?.value, abs(value-outputVolume) > 0.001 { refreshingVolume = true; outputVolume = value; refreshingVolume = false }
+    }
     @Published var outputVolume = 1.0 { didSet {
         let safe = min(1,max(0,outputVolume.isFinite ? outputVolume : 0))
         if outputVolume != safe { outputVolume = safe; return }
-        player.volume = Float(outputVolume); identifierSound.volume = Float(outputVolume)
+        if volumeScope == "system", !refreshingVolume {
+            guard volumeEndpoint.set(outputVolume) else {
+                refreshingVolume = true; outputVolume = volumeEndpoint.read()?.value ?? oldValue; refreshingVolume = false
+                error = tr("System volume is unavailable for this output device."); return
+            }
+            if let actual = volumeEndpoint.read()?.value, abs(actual-outputVolume) > 0.001 {
+                refreshingVolume = true; outputVolume = actual; refreshingVolume = false; return
+            }
+        }
+        player.volume = volumeScope == "system" ? 1 : Float(outputVolume)
+        identifierSound.volume = volumeScope == "system" ? 1 : Float(outputVolume)
         broadcastHostVolume()
     } }
     private var volumeTasks: [UUID:DispatchWorkItem] = [:]
@@ -102,7 +127,9 @@ struct ConnectedDevice: Identifiable {
     private var toneTimer: Timer?
     private var phase = 0.0
     private var observer: NSObjectProtocol?
-    init() {
+    init(volumeEndpoint: VolumeEndpoint = VolumeEndpoint()) {
+        self.volumeEndpoint = volumeEndpoint
+        refreshOutputVolume()
         #if os(macOS)
         observer = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated {
             guard let self else { return }
@@ -179,6 +206,7 @@ struct ConnectedDevice: Identifiable {
     }
     private func accept(_ connection: NWConnection) {
         guard peers.count < 16 else { connection.cancel(); return }
+        AppLog.shared.record("Host",tr("Incoming device connection"))
         let peer = Peer(connection, queue: .main)
         peers[peer.id] = peer; devices.append(ConnectedDevice(id: peer.id))
         peer.onMessage = { [weak self, weak peer] message in
@@ -186,7 +214,9 @@ struct ConnectedDevice: Identifiable {
             self.handle(message, from: peer)
         }
         peer.onFailure = { [weak self, weak peer] reason in
-            guard let self, let peer, self.devices.first(where: { $0.id == peer.id })?.gate.approved == false else { return }
+            guard let self, let peer else { return }
+            AppLog.shared.record("Host",reason,level:.error)
+            guard self.devices.first(where: { $0.id == peer.id })?.gate.approved == false else { return }
             self.error = String(format:tr("Connection ended before pairing: %@"),reason)
         }
         peer.onState = { [weak self, weak peer] state in
@@ -194,7 +224,9 @@ struct ConnectedDevice: Identifiable {
             switch state {
             case .ready:
                 guard peer.tlsSession != nil else { peer.cancel(); return }
+                AppLog.shared.record("Host",tr("TLS 1.3 connection ready"))
             case .cancelled, .failed:
+                AppLog.shared.record("Host",tr("Device connection ended"))
                 self.volumeTasks.removeValue(forKey:peer.id)?.cancel()
                 self.peers.removeValue(forKey: peer.id); self.devices.removeAll { $0.id == peer.id }; self.broadcastVolumePeers()
             default: break
@@ -213,11 +245,13 @@ struct ConnectedDevice: Identifiable {
     }
     private func handle(_ message: Message, from peer: Peer) {
         guard let index = devices.firstIndex(where: { $0.id == peer.id }), !devices[index].rejected, devices[index].gate.permits(message.kind) else { return }
+        if ["setHostVolume","setPeerVolume","setPeerChannel","identifyPeer","pairRequest","pairConfirm"].contains(message.kind) { AppLog.shared.record("Host",String(format:tr("Device control received: %@"),message.kind)) }
         if message.kind == "hello" {
             guard !devices[index].gate.approved, devices[index].deviceID == nil else { return }
             guard message.pairingVersion == 2, let id = message.deviceID, UUID(uuidString:id) != nil else { rejectDevice(peer.id); return }
             devices[index].supportsVolumeControl = message.volumeControlVersion == 1
             devices[index].volume = VolumeControl.valid(message.volume) ?? 1
+            devices[index].volumeScope = message.volumeScope == "system" ? "system" : "app"
             if let data = UserDefaults.standard.data(forKey:volumePolicyKey(id)), let policy = try? JSONDecoder().decode(VolumePermissions.self,from:data) { devices[index].permissions = policy }
             devices[index].deviceID = id; devices[index].name = String((message.name ?? "MusicSync Client").prefix(80))
             devices[index].channelSelection = ChannelSelection(rawValue:message.channelSelection ?? "automatic") ?? .automatic
@@ -238,13 +272,19 @@ struct ConnectedDevice: Identifiable {
         } else if message.kind == "setHostVolume" {
             var result = Message("volumeResult"); result.requestID = message.requestID; result.volumeTarget = "host"
             if devices[index].supportsVolumeControl, devices[index].permissions.clientMayControlHost, let volume = VolumeControl.valid(message.volume) {
-                outputVolume = volume; result.accepted = true
+                let previousError = error; error = nil; outputVolume = volume; result.accepted = error == nil
+                if error == nil { error = previousError }
             } else { result.accepted = false }
-            result.hostVolume = outputVolume; peer.send(result)
+            result.volumeScope = volumeScope; result.hostVolume = outputVolume; peer.send(result)
         } else if message.kind == "setPeerVolume" {
             if let target = message.targetPeerID, let volume = VolumeControl.valid(message.volume), permitsPeerVolume(peer.id,target:target) {
                 setClientVolume(target,volume:volume,requester:peer.id)
             } else { var denied = Message("peerVolumeDenied"); denied.targetPeerID = message.targetPeerID; peer.send(denied) }
+        } else if message.kind == "setPeerChannel" || message.kind == "identifyPeer" {
+            guard let target = message.targetPeerID, permitsPeerDeviceControl(peer.id,target:target) else { denyPeerControl(peer.id,target:message.targetPeerID); return }
+            if message.kind == "setPeerChannel", let raw = message.channelSelection, let selection = ChannelSelection(rawValue:raw) { setChannel(target,selection:selection,requester:peer.id) }
+            else if message.kind == "identifyPeer", let targetDevice = devices.first(where: { $0.id == target }), Date().timeIntervalSince(targetDevice.lastIdentify) >= 2 { identifyDevice(target,requester:peer.id) }
+            else { denyPeerControl(peer.id,target:target) }
         } else if message.kind == "volumeReport", devices[index].supportsVolumeControl, let volume = VolumeControl.valid(message.volume) {
             devices[index].volume = volume
             if let request = message.requestID, request == devices[index].volumeRequestID { devices[index].pendingVolume = nil; devices[index].volumeRequestID = nil; devices[index].volumeRequester = nil }
@@ -258,16 +298,21 @@ struct ConnectedDevice: Identifiable {
             updatePlaybackState(message, index:index)
             if let raw = message.channelSelection, let selection = ChannelSelection(rawValue:raw) { devices[index].channelSelection = selection }
             if let raw = message.outputChannel, let channel = OutputChannel(rawValue:raw) { devices[index].effectiveChannel = channel }
-            if message.requestID == devices[index].channelRequestID { devices[index].pendingChannel = nil; devices[index].channelRequestID = nil }
+            if let request = message.requestID, request == devices[index].channelRequestID { devices[index].pendingChannel = nil; devices[index].channelRequestID = nil; devices[index].channelRequester = nil }
+            broadcastVolumePeers()
+        } else if message.kind == "peerControlResult", message.accepted == false {
+            if let source = devices[index].channelRequester { denyPeerControl(source,target:peer.id) }; devices[index].channelRequester = nil; devices[index].pendingChannel = nil; devices[index].channelRequestID = nil
         } else if message.kind == "identifyResult" {
             if message.accepted == true { devices[index].identifyingUntil = Date().addingTimeInterval(1) }
-            else if let text = message.name { error = String(format:tr("Identification tone unavailable: %@"),String(text.prefix(200))) }
+            else if let text = message.name {
+                if let source = devices[index].identifyRequester { denyPeerControl(source,target:peer.id) }; error = String(format:tr("Identification tone unavailable: %@"),String(text.prefix(200))) }
         } else if message.kind == "identifyHost" {
             identifyHost()
         } else if message.kind == "stats",
                   let rtt = message.rtt, let offset = message.offset, let jitter = message.jitter,
                   let requested = message.latency, [rtt,offset,jitter,requested].allSatisfy({ $0.isFinite }),
                   rtt >= 0, rtt < 1, jitter >= 0, requested >= 0.18, requested <= 0.5 {
+            let previousChannel = devices[index].effectiveChannel; let previousSelection = devices[index].channelSelection; let previousState = devices[index].playbackState
             updatePlaybackState(message,index:index)
             devices[index].ready = true; devices[index].rtt = rtt; devices[index].offset = offset
             devices[index].jitter = jitter; devices[index].request = requested; devices[index].lastStats = SyncClock.now
@@ -275,7 +320,10 @@ struct ConnectedDevice: Identifiable {
             if let count = message.dropped, (0...1_000_000).contains(count) { devices[index].dropped = count }
             if let raw = message.channelSelection, let selection = ChannelSelection(rawValue:raw) { devices[index].channelSelection = selection }
             if let raw = message.outputChannel, let channel = OutputChannel(rawValue:raw) { devices[index].effectiveChannel = channel }
+            if previousChannel != devices[index].effectiveChannel || previousSelection != devices[index].channelSelection || previousState != devices[index].playbackState { broadcastVolumePeers() }
+            let previous = delay.target
             delay.update(rtt:rtt,jitter:jitter,requested:requested); latency = delay.target
+            if delay.target - previous > 0.001 { AppLog.shared.record("Host",String(format:tr("Shared buffer increased to %.0f ms"),latency * 1000)) }
             var timeline = Message("timeline"); timeline.latency = latency; peer.send(timeline)
         }
     }
@@ -300,6 +348,7 @@ struct ConnectedDevice: Identifiable {
     }
     private func authorize(_ id: UUID, secret: String?) {
         guard let index = devices.firstIndex(where: { $0.id == id }), !devices[index].rejected else { return }
+        AppLog.shared.record("Host",tr(secret == nil ? "Remembered pairing authenticated" : "New device pairing approved"))
         devices[index].gate.approve(); devices[index].pairingCode = nil
         if secret != nil {
             devices[index].permissions = VolumePermissions()
@@ -307,14 +356,16 @@ struct ConnectedDevice: Identifiable {
         }
         var approved = hostInfo("pairApproved"); approved.pairingSecret = secret
         approved.outputChannel = layout.remoteChannel.rawValue
-        approved.volumeControlVersion = 1; approved.hostVolume = outputVolume
+        approved.volumeScope = volumeScope; approved.volumeControlVersion = 1; approved.hostVolume = outputVolume
         approved.allowClientHostVolume = devices[index].permissions.clientMayControlHost
         approved.allowHostClientVolume = devices[index].permissions.hostMayControlClient
+        approved.allowPeerDeviceControl = devices[index].permissions.peersMayControlClientDevice
         approved.allowPeerClientVolume = devices[index].permissions.peersMayControlClient
         peers[id]?.send(approved); broadcastVolumePeers()
     }
     func rejectDevice(_ id: UUID) {
         guard let peer = peers[id], let index = devices.firstIndex(where: { $0.id == id }) else { return }
+        AppLog.shared.record("Host",tr("Pairing rejected or removed"),level:.warning)
         devices[index].rejected = true; devices[index].ready = false; devices[index].gate = PairingGate()
         peer.send(Message("pairRejected")); broadcastVolumePeers()
         DispatchQueue.main.asyncAfter(deadline:.now()+0.2) { [weak peer] in peer?.cancel() }
@@ -328,12 +379,15 @@ struct ConnectedDevice: Identifiable {
         for other in devices where other.deviceID == clientID { rejectDevice(other.id) }
     }
     private func volumePolicyKey(_ clientID: String) -> String { "volumePolicy." + hostID + "." + clientID }
-    func setVolumePermissions(_ id: UUID, clientMayControlHost: Bool? = nil, hostMayControlClient: Bool? = nil, clientMayControlPeers: Bool? = nil, peersMayControlClient: Bool? = nil) {
+    func setVolumePermissions(_ id: UUID, clientMayControlHost: Bool? = nil, hostMayControlClient: Bool? = nil, clientMayControlPeers: Bool? = nil, peersMayControlClient: Bool? = nil, clientMayControlPeerDevices: Bool? = nil, peersMayControlClientDevice: Bool? = nil) {
         guard let index = devices.firstIndex(where: { $0.id == id }), devices[index].gate.approved, let clientID = devices[index].deviceID else { return }
+        AppLog.shared.record("Host",tr("Device volume permissions changed"))
         if let value = clientMayControlHost { devices[index].permissions.clientMayControlHost = value }
         if let value = hostMayControlClient { devices[index].permissions.hostMayControlClient = value }
         if let value = clientMayControlPeers { devices[index].permissions.clientMayControlPeers = value }
         if let value = peersMayControlClient { devices[index].permissions.peersMayControlClient = value }
+        if let value = clientMayControlPeerDevices { devices[index].permissions.clientMayControlPeerDevices = value }
+        if let value = peersMayControlClientDevice { devices[index].permissions.peersMayControlClientDevice = value }
         if let data = try? JSONEncoder().encode(devices[index].permissions) { UserDefaults.standard.set(data,forKey:volumePolicyKey(clientID)) }
         if devices[index].volumeRequester == nil && !devices[index].permissions.hostMayControlClient {
             volumeTasks.removeValue(forKey:id)?.cancel(); devices[index].pendingVolume = nil; devices[index].volumeRequestID = nil
@@ -341,8 +395,9 @@ struct ConnectedDevice: Identifiable {
         var policy = Message("volumePolicy")
         policy.allowClientHostVolume = devices[index].permissions.clientMayControlHost
         policy.allowHostClientVolume = devices[index].permissions.hostMayControlClient
+        policy.allowPeerDeviceControl = devices[index].permissions.peersMayControlClientDevice
         policy.allowPeerClientVolume = devices[index].permissions.peersMayControlClient
-        policy.hostVolume = outputVolume; peers[id]?.send(policy)
+        policy.volumeScope = volumeScope; policy.hostVolume = outputVolume; peers[id]?.send(policy)
         // Recheck queued relays immediately when either endpoint loses permission.
         for target in devices where target.volumeRequester != nil {
             if !permitsPeerVolume(target.volumeRequester!,target:target.id), let i = devices.firstIndex(where: { $0.id == target.id }) {
@@ -353,7 +408,7 @@ struct ConnectedDevice: Identifiable {
         broadcastVolumePeers()
     }
     private func broadcastHostVolume() {
-        var update = Message("hostVolume"); update.hostVolume = outputVolume
+        var update = Message("hostVolume"); update.volumeScope = volumeScope; update.hostVolume = outputVolume
         for device in devices where device.gate.approved && device.supportsVolumeControl { peers[device.id]?.send(update) }
     }
     private func permitsPeerVolume(_ source: UUID, target: UUID) -> Bool {
@@ -361,12 +416,19 @@ struct ConnectedDevice: Identifiable {
               let sender = devices.first(where: { $0.id == source }), let receiver = devices.first(where: { $0.id == target }) else { return false }
         return sender.gate.approved && receiver.gate.approved && sender.supportsVolumeControl && receiver.supportsVolumeControl && sender.permissions.clientMayControlPeers && receiver.permissions.peersMayControlClient
     }
+    private func permitsPeerDeviceControl(_ source: UUID, target: UUID) -> Bool {
+        guard source != target, let sender = devices.first(where: { $0.id == source }), let receiver = devices.first(where: { $0.id == target }) else { return false }
+        return sender.gate.approved && receiver.gate.approved && !sender.rejected && !receiver.rejected && sender.permissions.clientMayControlPeerDevices && receiver.permissions.peersMayControlClientDevice
+    }
+    private func denyPeerControl(_ source: UUID, target: UUID?) {
+        var denied = Message("peerControlDenied"); denied.targetPeerID = target; peers[source]?.send(denied)
+    }
     private func broadcastVolumePeers() {
         let approved = devices.filter { $0.gate.approved && !$0.rejected && $0.supportsVolumeControl }
         for recipient in approved {
             var roster = Message("volumePeers")
             roster.volumePeers = approved.filter { $0.id != recipient.id }.prefix(32).map {
-                VolumePeer(id:$0.id,name:$0.name,volume:$0.volume,canControl:permitsPeerVolume(recipient.id,target:$0.id))
+                VolumePeer(id:$0.id,name:$0.name,volume:$0.volume,canControl:permitsPeerVolume(recipient.id,target:$0.id),volumeScope:$0.volumeScope,outputChannel:$0.effectiveChannel.rawValue,channelSelection:$0.channelSelection.rawValue,playbackState:$0.playbackState,canControlDevice:permitsPeerDeviceControl(recipient.id,target:$0.id))
             }
             peers[recipient.id]?.send(roster)
         }
@@ -390,6 +452,7 @@ struct ConnectedDevice: Identifiable {
               devices[index].volumeRequester.map({ permitsPeerVolume($0,target:id) }) ?? devices[index].permissions.hostMayControlClient,
               let volume = devices[index].pendingVolume else { return }
         let request = UUID().uuidString; devices[index].volumeRequestID = request
+        AppLog.shared.record("Host",String(format:tr("Client volume requested: %.0f%%"),volume * 100))
         var message = Message("setClientVolume"); message.targetPeerID = devices[index].volumeRequester; message.volume = volume; message.requestID = request; peers[id]?.send(message)
         DispatchQueue.main.asyncAfter(deadline:.now()+3) { [weak self] in
             guard let self, let index = self.devices.firstIndex(where: { $0.id == id }), self.devices[index].volumeRequestID == request else { return }
@@ -397,14 +460,18 @@ struct ConnectedDevice: Identifiable {
             self.error = tr("The Client did not confirm the volume change.")
         }
     }
-    func setChannel(_ id: UUID, selection: ChannelSelection) {
+    func setChannel(_ id: UUID, selection: ChannelSelection, requester: UUID? = nil) {
         guard let index = devices.firstIndex(where: { $0.id == id }), devices[index].gate.approved else { return }
+        if let requester, !permitsPeerDeviceControl(requester,target:id) { return }
+        devices[index].channelRequester = requester
+        AppLog.shared.record("Host",String(format:tr("Client channel requested: %@"),selection.title))
         let request = UUID().uuidString; devices[index].pendingChannel = selection; devices[index].channelRequestID = request
-        var message = Message("setChannel"); message.channelSelection = selection.rawValue
+        var message = Message("setChannel"); message.targetPeerID = requester; message.channelSelection = selection.rawValue
         message.outputChannel = layout.remoteChannel.rawValue; message.requestID = request; peers[id]?.send(message)
         DispatchQueue.main.asyncAfter(deadline:.now()+3) { [weak self] in
             guard let self, let index = self.devices.firstIndex(where: { $0.id == id }), self.devices[index].channelRequestID == request else { return }
             self.devices[index].pendingChannel = nil; self.devices[index].channelRequestID = nil
+            if let source = self.devices[index].channelRequester { self.denyPeerControl(source,target:id) }; self.devices[index].channelRequester = nil
             self.error = tr("The Client did not confirm the channel change. Check its connection.")
         }
     }
@@ -412,10 +479,13 @@ struct ConnectedDevice: Identifiable {
         var message = Message("hostChannel"); message.outputChannel = layout.remoteChannel.rawValue
         for device in devices where device.gate.approved { peers[device.id]?.send(message) }
     }
-    func identifyDevice(_ id: UUID) {
+    func identifyDevice(_ id: UUID, requester: UUID? = nil) {
         guard let index = devices.firstIndex(where: { $0.id == id }), devices[index].gate.approved,
               Date().timeIntervalSince(devices[index].lastIdentify) >= 2 else { return }
-        devices[index].lastIdentify = Date(); peers[id]?.send(Message("identify"))
+        if let requester, !permitsPeerDeviceControl(requester,target:id) { return }
+        devices[index].identifyRequester = requester
+        AppLog.shared.record("Host",tr("Client identification requested"))
+        devices[index].lastIdentify = Date(); var command = Message("identify"); command.targetPeerID = requester; peers[id]?.send(command)
     }
     func identifyHost() {
         do { _ = try identifierSound.play() } catch { self.error = error.localizedDescription }

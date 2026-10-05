@@ -51,12 +51,14 @@ public struct Message: Codable {
     public var bufferCount: Int?
     public var monitor: Bool?
     public var outputChannel: String?
+    public var volumeScope: String?
     public var volumeControlVersion: Int?
     public var volume: Double?
     public var hostVolume: Double?
     public var volumeTarget: String?
     public var allowClientHostVolume: Bool?
     public var allowHostClientVolume: Bool?
+    public var allowPeerDeviceControl: Bool?
     public var allowPeerClientVolume: Bool?
     public var targetPeerID: UUID?
     public var volumePeers: [VolumePeer]?

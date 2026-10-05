@@ -16,6 +16,15 @@ final class VolumeTests: XCTestCase {
         for kind in ["setHostVolume","setPeerVolume","volumeReport"] { XCTAssertFalse(gate.permits(kind)) }
         gate.approve(); XCTAssertTrue(gate.permits("setPeerVolume"))
     }
+    func testOlderPoliciesKeepVolumeGrantsAndDenyNewDeviceControls() throws {
+        let old = Data(#"{"clientMayControlHost":true,"hostMayControlClient":false,"clientMayControlPeers":true,"peersMayControlClient":false}"#.utf8)
+        let policy = try JSONDecoder().decode(VolumePermissions.self,from:old)
+        XCTAssertTrue(policy.clientMayControlHost); XCTAssertTrue(policy.clientMayControlPeers); XCTAssertFalse(policy.hostMayControlClient)
+        XCTAssertFalse(policy.clientMayControlPeerDevices); XCTAssertFalse(policy.peersMayControlClientDevice)
+        var message = Message("volumePeers")
+        message.volumePeers = [VolumePeer(id:UUID(),name:"Mac",volume:0.5,canControl:true,volumeScope:"system",outputChannel:"left",channelSelection:"left",playbackState:"Streaming",canControlDevice:true)]
+        var framer = Framer(); XCTAssertEqual(try framer.consume(Framer.encode(message)).first?.volumePeers,message.volumePeers)
+    }
     func testRosterFramingAndOlderMessageCompatibility() throws {
         var message = Message("volumePeers")
         message.volumePeers = [VolumePeer(id:UUID(),name:"iPhone",volume:0.4,canControl:false)]

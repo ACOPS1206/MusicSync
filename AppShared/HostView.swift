@@ -9,6 +9,7 @@ import MediaPlayer
 #endif
 struct HostView: View {
     @State private var showingHelp = false
+    @State private var showingLogs = false
     #if os(iOS)
     @State private var importingFile = false
     @State private var pickingMusic = false
@@ -20,6 +21,7 @@ struct HostView: View {
             Form {
                 Section {
                     Label(model.status, systemImage:model.streaming ? "waveform" : "antenna.radiowaves.left.and.right")
+                    AppVersionView()
                     #if os(iOS)
                     Toggle("Direct connection only (LiveContainer)", isOn: $model.directOnly).disabled(model.active)
                     #endif
@@ -91,8 +93,13 @@ struct HostView: View {
                 }
                 if let notice = model.pairingNotice { Section("Pairing storage") { Text(notice).font(.caption).foregroundStyle(.secondary) } }
                 Section("Audio") {
-                    PlaybackVolumeView(title:"Host volume",volume:$model.outputVolume)
-                    Text("These sliders adjust MusicSync playback only. System volume remains controlled by the device buttons or system settings.").font(.caption).foregroundStyle(.secondary)
+                    #if os(iOS)
+                    Text("iPhone system volume").font(.subheadline)
+                    NativeSystemVolumeView().frame(height:36)
+                    #endif
+                    PlaybackVolumeView(title:model.volumeScope == "system" ? "Host system volume" : "Host MusicSync volume",volume:$model.outputVolume).disabled(!model.volumeAvailable)
+                    if !model.volumeAvailable { Text("System volume is unavailable for this output device.").font(.caption).foregroundStyle(.secondary) }
+                    Text("Mac system volume affects all sound on the selected output device. iPhone remote controls adjust MusicSync playback; change iPhone system volume directly using the native slider or buttons.").font(.caption).foregroundStyle(.secondary)
                     #if os(macOS)
                     Picker("Capture",selection:$model.mode) {
                         Text("Synchronized • CoreAudio tap").tag(0)
@@ -150,10 +157,13 @@ struct HostView: View {
                 if let error = model.error { Section("Attention") { Text(error).foregroundStyle(.red).textSelection(.enabled) } }
                 ProjectLinkView()
             }.formStyle(.grouped).navigationTitle(sessionTitle(model.sessionPhase))
-            .toolbar { ToolbarItem(placement: .primaryAction) {
+            .toolbar {
+                ToolbarItem(placement:.primaryAction) { Button { showingLogs = true } label: { Label("Logs",systemImage:"list.bullet.rectangle") } }
+                ToolbarItem(placement: .primaryAction) {
                 Button { showingHelp = true } label: { Label("Help", systemImage: "questionmark.circle") }
             } }
             .sheet(isPresented: $showingHelp) { HelpView() }
+            .sheet(isPresented: $showingLogs) { DiagnosticsView() }
             #if os(iOS)
             .fileImporter(isPresented: $importingFile, allowedContentTypes: [.audio]) { result in
                 do {

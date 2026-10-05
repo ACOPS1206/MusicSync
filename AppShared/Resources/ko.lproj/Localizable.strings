@@ -315,3 +315,91 @@
 "The Host manages permissions for each paired Client. Host-to-Client volume control is enabled by default; Client-to-Host and Client-to-Client control are disabled by default. To let one Client adjust another, allow control on the sender and reception on the target. Revoking permission blocks new requests immediately. Your own local volume is always adjustable." = "호스트에서 페어링된 클라이언트별 권한을 관리합니다. 호스트의 클라이언트 볼륨 제어는 기본 허용하고, 클라이언트의 호스트·다른 클라이언트 볼륨 제어는 기본 차단합니다. 클라이언트 간 제어는 조작하는 기기의 제어 권한과 대상 기기의 수신 권한을 모두 켜세요. 권한을 끄면 새 요청을 즉시 차단합니다. 자신의 로컬 볼륨은 항상 조절할 수 있습니다.";
 
 "Clock uncertainty above 60 ms must persist for 5 seconds. Scheduling error above 25 ms, drops above 10 packets/s, clock age above 5 seconds or audio age above 2 seconds must persist for 3 seconds. Each risk is tracked independently. Warnings clear after 3 seconds below a lower recovery threshold. Monitor mode is reported after the initial 30-second warning warmup." = "경고는 처음 30초의 준비 시간이 끝난 뒤 감지합니다. 시계 불확실성 60ms 초과는 5초, 예약 오차 25ms 초과·초당 10개 이상 누락·시계 갱신 5초 초과·오디오 중단 2초 초과는 3초간 지속되어야 합니다. 위험 항목은 독립적으로 추적하며 더 낮은 회복 기준 아래에서 3초간 안정되면 경고를 해제합니다. 모니터 모드도 준비 시간 후 표시합니다.";
+
+"Version %@ · Build %@" = "버전 %@ · 빌드 %@";
+
+"Logs" = "로그";
+
+"Copy Logs" = "로그 복사";
+
+"Clear Logs" = "로그 지우기";
+
+"Copied" = "복사됨";
+
+"Warnings and errors only" = "경고와 오류만 표시";
+
+"No logs to display" = "표시할 로그가 없습니다";
+
+"Info" = "정보";
+
+"Warning" = "경고";
+
+"Error" = "오류";
+
+"Latest 300 events, newest first. Logs remain in memory until the app closes. Audio and pairing secrets are not logged. Copied logs may contain device names or LAN addresses; review before sharing." = "최근 300개 기록을 최신순으로 표시합니다. 앱을 종료하면 기록이 사라집니다. 오디오·페어링 비밀은 기록하지 않습니다. 복사한 로그에 기기 이름이나 LAN 주소가 포함될 수 있으므로 공유 전 확인하세요.";
+
+"Sync warnings cleared" = "동기화 경고 해제";
+
+"Sync warnings: %@" = "동기화 경고: %@";
+
+"Incoming device connection" = "기기 연결 요청 수신";
+
+"TLS 1.3 connection ready" = "TLS 1.3 연결 준비 완료";
+
+"Device connection ended" = "기기 연결 종료";
+
+"Device control received: %@" = "기기 제어 요청 수신: %@";
+
+"Remembered pairing authenticated" = "저장된 페어링 인증 완료";
+
+"New device pairing approved" = "새 기기 페어링 승인";
+
+"Pairing rejected or removed" = "페어링 거절 또는 해제";
+
+"Device volume permissions changed" = "기기별 볼륨 권한 변경";
+
+"Client volume requested: %.0f%%" = "클라이언트 볼륨 변경 요청: %.0f%%";
+
+"Client channel requested: %@" = "클라이언트 채널 변경 요청: %@";
+
+"Client identification requested" = "클라이언트 식별음 요청";
+
+"Shared buffer increased to %.0f ms" = "공통 버퍼를 %.0fms로 증가";
+
+"Host control received: %@" = "호스트 제어 수신: %@";
+
+"Pairing code match confirmed" = "페어링 코드 일치 확인";
+
+"Retrying connection in 2 seconds" = "2초 후 연결 재시도";
+
+"Logs & version" = "로그 및 버전";
+
+"Open Logs from the top toolbar to see connection, pairing, playback, synchronization warnings and device controls. Copy Logs includes the app version and OS version. Logs are limited to 300 events in memory and disappear when the app exits. Pairing codes, keys, proofs and audio payloads are not recorded. Review device names and LAN addresses before sharing logs." = "상단 도구 모음의 로그에서 연결·페어링·재생·동기화 경고·기기 제어 기록을 확인하세요. 로그 복사에는 앱 버전과 OS 버전이 포함됩니다. 실행 중 메모리에 최대 300개를 저장하고 앱 종료 시 사라집니다. 페어링 코드·키·인증 응답·오디오 데이터는 기록하지 않습니다. 공유 전 기기 이름과 LAN 주소를 확인하세요.";
+
+"System volume" = "시스템 볼륨";
+
+"MusicSync playback volume" = "MusicSync 재생 볼륨";
+
+"Host system volume" = "호스트 시스템 볼륨";
+
+"Host MusicSync volume" = "호스트 MusicSync 볼륨";
+
+"iPhone system volume" = "iPhone 시스템 볼륨";
+
+"Mac system volume affects all sound on the selected output device. iPhone remote controls adjust MusicSync playback; change iPhone system volume directly using the native slider or buttons." = "Mac 시스템 볼륨은 선택한 출력 기기의 모든 소리에 적용됩니다. iPhone의 원격 제어는 MusicSync 재생 볼륨을 조절합니다. iPhone 시스템 볼륨은 해당 기기의 기본 슬라이더나 버튼으로 직접 변경하세요.";
+
+"System volume is unavailable for this output device." = "이 출력 기기는 시스템 볼륨 변경을 지원하지 않습니다.";
+
+"Device permissions" = "기기 제어 권한";
+
+"Client may change other devices' channels and identify them" = "이 클라이언트가 다른 기기의 채널 변경·식별음 제어 허용";
+
+"Other Clients may change this device's channel and identify it" = "다른 클라이언트가 이 기기의 채널 변경·식별음 제어 허용";
+
+"Ask the Host to allow channel and identification control." = "호스트에서 채널 변경·식별음 제어 권한을 허용해 주세요.";
+
+"Device control was denied or not confirmed. Check device permissions on the Host." = "기기 제어가 거부되었거나 응답이 없습니다. 호스트에서 기기 제어 권한을 확인하세요.";
+
+"Peer device control is disabled" = "클라이언트 간 기기 제어가 꺼져 있습니다.";
+
+"Connected Clients show their reported left, right or stereo channel and playback state. To change their channel or play an identification tone, the Host must enable device-control permission on both the controlling Client and the target. These permissions are separate from volume control and off by default." = "연결된 클라이언트가 보고한 좌·우·스테레오 채널과 재생 상태를 표시합니다. 다른 클라이언트의 채널 변경이나 식별음을 사용하려면 호스트에서 조작하는 기기와 대상 기기의 기기 제어 권한을 모두 켜세요. 볼륨 권한과는 별개이며 기본적으로 꺼져 있습니다.";

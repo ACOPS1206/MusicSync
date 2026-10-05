@@ -14,8 +14,11 @@ struct NearbyMac: Identifiable {
 }
 @MainActor final class ClientModel: ObservableObject {
     @Published var sessionID = UUID()
-    @Published var sessionPhase = "Waiting"
-    @Published var syncIssues: [SyncIssue] = []
+    @Published var sessionPhase = "Waiting" { didSet { if sessionPhase != oldValue { AppLog.shared.record("Listen",tr(sessionPhase)) } } }
+    @Published var syncIssues: [SyncIssue] = [] { didSet {
+        guard syncIssues != oldValue else { return }
+        AppLog.shared.record("Listen",syncIssues.isEmpty ? tr("Sync warnings cleared") : String(format:tr("Sync warnings: %@"),syncIssues.map(\.rawValue).joined(separator:", ")),level:syncIssues.isEmpty ? .info : .warning)
+    } }
     @Published var syncWarmupRemaining = SyncHealthPolicy.warmupDuration
     @Published var healthInput = SyncHealthInput()
     @Published var traffic = TrafficSnapshot()
@@ -30,7 +33,7 @@ struct NearbyMac: Identifiable {
     private var monitorMode = false
     private var audioInterrupted = false
     @Published var nearby: [NearbyMac] = []
-    @Published var status = tr("Ready to search")
+    @Published var status = tr("Ready to search") { didSet { if status != oldValue { AppLog.shared.record("Listen",status) } } }
     @Published var connected = false
     @Published var paired = false
     @Published var pairingCode = ""
@@ -47,7 +50,7 @@ struct NearbyMac: Identifiable {
     @Published var connectedHostName = ""
     @Published var hostAddress = ""
     @Published var hostServiceName = ""
-    @Published var pairingNotice: String?
+    @Published var pairingNotice: String? { didSet { if let pairingNotice, pairingNotice != oldValue { AppLog.shared.record("Listen",pairingNotice,level:.warning) } } }
     @Published var identifyingUntil = Date.distantPast
     private let deviceID = PairingStore.identity("client")
     private var pairingHostID: String?
@@ -57,19 +60,39 @@ struct NearbyMac: Identifiable {
     private let identifierSound = IdentificationSound()
     @Published var searching = false
     @Published var selectedName: String?
-    @Published var error: String?
+    @Published var error: String? { didSet { if let error, error != oldValue { AppLog.shared.record("Listen",error,level:.error) } } }
     @Published var rtt = 0.0
     @Published var offset = 0.0
     @Published var jitter = 0.0
     @Published var latency = 0.18
     @Published var uncertainty = 0.0
     @Published var dropped = 0
+    private let volumeEndpoint: VolumeEndpoint
+    private var refreshingVolume = false
+    @Published private(set) var volumeAvailable = true
+    var volumeScope: String { volumeEndpoint.scope }
+    func refreshOutputVolume() {
+        guard volumeScope == "system" else { return }
+        let reading = volumeEndpoint.read(); volumeAvailable = reading?.writable ?? false
+        if let value = reading?.value, abs(value-outputVolume) > 0.001 { refreshingVolume = true; outputVolume = value; refreshingVolume = false }
+    }
     @Published var outputVolume = 1.0 { didSet {
         let safe = min(1,max(0,outputVolume.isFinite ? outputVolume : 0))
         if outputVolume != safe { outputVolume = safe; return }
-        player.volume = Float(outputVolume); identifierSound.volume = Float(outputVolume)
+        if volumeScope == "system", !refreshingVolume {
+            guard volumeEndpoint.set(outputVolume) else {
+                refreshingVolume = true; outputVolume = volumeEndpoint.read()?.value ?? oldValue; refreshingVolume = false
+                error = tr("System volume is unavailable for this output device."); return
+            }
+            if let actual = volumeEndpoint.read()?.value, abs(actual-outputVolume) > 0.001 {
+                refreshingVolume = true; outputVolume = actual; refreshingVolume = false; return
+            }
+        }
+        player.volume = volumeScope == "system" ? 1 : Float(outputVolume)
+        identifierSound.volume = volumeScope == "system" ? 1 : Float(outputVolume)
         if !applyingVolumeCommand { reportVolume() }
     } }
+    @Published var hostVolumeScope = "app"
     @Published var hostVolume = 1.0
     @Published var pendingHostVolume: Double?
     @Published var canControlHostVolume = false
@@ -78,6 +101,10 @@ struct NearbyMac: Identifiable {
     @Published var volumePeers: [VolumePeer] = []
     @Published var peersCanControlClientVolume = false
     @Published var pendingPeerVolumes: [UUID:Double] = [:]
+    @Published var pendingPeerChannels: [UUID:ChannelSelection] = [:]
+    private var peerChannelRequests: [UUID:UUID] = [:]
+    private var lastPeerIdentify: [UUID:Date] = [:]
+    private var acceptsPeerDeviceControl = false
     private var peerVolumeTasks: [UUID:DispatchWorkItem] = [:]
     private var applyingVolumeCommand = false
     private var hostVolumeTask: DispatchWorkItem?
@@ -108,7 +135,9 @@ struct NearbyMac: Identifiable {
     private var lastAudio = 0.0
     private var receivedLatency = 0.18
     private var playbackDrops = 0
-    init() {
+    init(volumeEndpoint: VolumeEndpoint = VolumeEndpoint()) {
+        self.volumeEndpoint = volumeEndpoint
+        refreshOutputVolume()
         #if os(iOS)
         routeObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.restartAudio()  } }
         interruptionObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] notification in MainActor.assumeIsolated {
@@ -190,7 +219,7 @@ struct NearbyMac: Identifiable {
         self.peer = peer; status = String(format: tr("Connecting to %@…"), mac.name)
         peer.onFailure = { [weak self, weak peer] reason in
             guard let self, let peer, self.peer === peer else { return }
-            self.connectionFailure = reason
+            self.connectionFailure = reason; AppLog.shared.record("Listen",reason,level:.error)
         }
         peer.onState = { [weak self, weak peer] state in
             guard let self, let peer, self.peer === peer else { return }
@@ -199,11 +228,12 @@ struct NearbyMac: Identifiable {
                 guard let session = peer.tlsSession, trust.publicKeyPin != nil else {
                     self.securityFailure(tr("Encrypted connection verification failed. No audio was sent.")); return
                 }
+                AppLog.shared.record("Listen",tr("TLS 1.3 connection ready"))
                 self.tlsSession = session; self.encrypted = true
                 self.connected = true; self.status = tr("Authenticating with Host…"); self.sessionPhase = "Authenticating"
                 var hello = Message("hello"); hello.pairingVersion = 2; hello.deviceID = self.deviceID
                 hello.channelSelection = self.channelOverride.rawValue
-                hello.volumeControlVersion = 1; hello.volume = self.outputVolume
+                hello.volumeScope = self.volumeScope; hello.volumeControlVersion = 1; hello.volume = self.outputVolume
                 #if os(iOS)
                 hello.name = UIDevice.current.name
                 #else
@@ -229,6 +259,7 @@ struct NearbyMac: Identifiable {
     }
     private func handle(_ message: Message) {
         let now = SyncClock.now
+        if ["setChannel","setClientVolume","volumePolicy","identify","pairApproved","pairRejected"].contains(message.kind) { AppLog.shared.record("Listen",String(format:tr("Host control received: %@"),message.kind)) }
         if message.kind == "pairChallenge" {
             guard !paired, message.pairingVersion == 2, let hostID = message.hostID, UUID(uuidString:hostID) != nil,
                   let nonce = message.nonce, UUID(uuidString:nonce) != nil else { return }
@@ -278,17 +309,23 @@ struct NearbyMac: Identifiable {
         if message.kind == "volumePeers", let roster = message.volumePeers, roster.count <= 32,
            Set(roster.map(\.id)).count == roster.count, roster.allSatisfy({ VolumeControl.valid($0.volume) != nil && $0.name.count <= 80 }) {
             volumePeers = roster
+            for id in Array(pendingPeerChannels.keys) {
+                if !roster.contains(where: { $0.id == id && $0.canControlDevice == true }) || roster.first(where: { $0.id == id })?.channelSelection == pendingPeerChannels[id]?.rawValue { pendingPeerChannels[id] = nil; peerChannelRequests[id] = nil }
+            }
             for id in Array(pendingPeerVolumes.keys) where !roster.contains(where: { $0.id == id && $0.canControl }) {
                 pendingPeerVolumes[id] = nil; peerVolumeTasks.removeValue(forKey:id)?.cancel()
             }
             return
+        } else if message.kind == "peerControlDenied" {
+            if let id = message.targetPeerID { pendingPeerChannels[id] = nil; peerChannelRequests[id] = nil }
+            error = tr("Device control was denied or not confirmed. Check device permissions on the Host."); return
         } else if message.kind == "peerVolumeDenied" {
             if let id = message.targetPeerID { pendingPeerVolumes[id] = nil; peerVolumeTasks.removeValue(forKey:id)?.cancel() }
             error = tr("The volume change was denied or not confirmed. Check permissions on the Host."); return
         } else if message.kind == "volumePolicy" {
             applyVolumePolicy(message); return
         } else if message.kind == "hostVolume", let value = VolumeControl.valid(message.hostVolume) {
-            hostVolume = value; return
+            hostVolumeScope = message.volumeScope == "system" ? "system" : "app"; hostVolume = value; return
         } else if message.kind == "volumeResult", message.volumeTarget == "host", message.requestID == hostVolumeRequestID {
             hostVolumeRequestID = nil; pendingHostVolume = nil
             if let value = VolumeControl.valid(message.hostVolume) { hostVolume = value }
@@ -296,12 +333,16 @@ struct NearbyMac: Identifiable {
             return
         } else if message.kind == "setClientVolume" {
             if supportsVolumeControl, (message.targetPeerID == nil ? hostCanControlClientVolume : peersCanControlClientVolume), let value = VolumeControl.valid(message.volume) {
+                let previousError = error; error = nil
                 applyingVolumeCommand = true; outputVolume = value; applyingVolumeCommand = false
-                reportVolume(requestID:message.requestID)
+                if error == nil { error = previousError; reportVolume(requestID:message.requestID) }
+                else { var denied = Message("volumeResult"); denied.accepted = false; denied.volumeTarget = "client"; denied.requestID = message.requestID; peer?.send(denied) }
             } else {
                 var denied = Message("volumeResult"); denied.accepted = false; denied.volumeTarget = "client"; denied.requestID = message.requestID; peer?.send(denied)
             }
             return
+        } else if (message.kind == "setChannel" || message.kind == "identify"), message.targetPeerID != nil, !acceptsPeerDeviceControl {
+            var denied = Message(message.kind == "identify" ? "identifyResult" : "peerControlResult"); denied.accepted = false; denied.requestID = message.requestID; denied.name = tr("Peer device control is disabled"); peer?.send(denied); return
         } else if message.kind == "setChannel", let raw = message.channelSelection, let selection = ChannelSelection(rawValue:raw) {
             if let channel = message.outputChannel.flatMap(OutputChannel.init(rawValue:)) { hostChannel = channel }
             channelOverride = selection; reportChannel(requestID:message.requestID); return
@@ -406,6 +447,8 @@ struct NearbyMac: Identifiable {
         message.outputChannel = effectiveChannel.rawValue; message.requestID = requestID; peer?.send(message)
     }
     private func applyVolumePolicy(_ message: Message) {
+        acceptsPeerDeviceControl = message.allowPeerDeviceControl ?? false
+        hostVolumeScope = message.volumeScope == "system" ? "system" : "app"
         canControlHostVolume = supportsVolumeControl && (message.allowClientHostVolume ?? false)
         hostCanControlClientVolume = supportsVolumeControl && (message.allowHostClientVolume ?? false)
         peersCanControlClientVolume = supportsVolumeControl && (message.allowPeerClientVolume ?? false)
@@ -415,6 +458,20 @@ struct NearbyMac: Identifiable {
     private func reportVolume(requestID: String? = nil) {
         guard paired, supportsVolumeControl else { return }
         var report = Message("volumeReport"); report.volume = outputVolume; report.requestID = requestID; peer?.send(report)
+    }
+    func requestPeerChannel(_ id: UUID, selection: ChannelSelection) {
+        guard paired, volumePeers.contains(where: { $0.id == id && $0.canControlDevice == true }) else { return }
+        pendingPeerChannels[id] = selection
+        let token = UUID(); peerChannelRequests[id] = token
+        var request = Message("setPeerChannel"); request.targetPeerID = id; request.channelSelection = selection.rawValue; peer?.send(request)
+        DispatchQueue.main.asyncAfter(deadline:.now()+3) { [weak self] in
+            guard let self, self.peerChannelRequests[id] == token else { return }
+            self.pendingPeerChannels[id] = nil; self.peerChannelRequests[id] = nil; self.error = tr("The Client did not confirm the channel change. Check its connection.")
+        }
+    }
+    func identifyPeer(_ id: UUID) {
+        guard paired, volumePeers.contains(where: { $0.id == id && $0.canControlDevice == true }), Date().timeIntervalSince(lastPeerIdentify[id] ?? .distantPast) >= 2 else { return }
+        lastPeerIdentify[id] = Date(); var request = Message("identifyPeer"); request.targetPeerID = id; peer?.send(request)
     }
     func requestPeerVolume(_ id: UUID, volume: Double) {
         guard paired, supportsVolumeControl, volumePeers.contains(where: { $0.id == id && $0.canControl }), let value = VolumeControl.valid(volume) else { return }
@@ -444,6 +501,7 @@ struct NearbyMac: Identifiable {
     }
     func confirmPairingCode() {
         guard !paired, !pairingCode.isEmpty, pairingCode == tlsSession?.pairingCode else { return }
+        AppLog.shared.record("Listen",tr("Pairing code match confirmed"))
         codeConfirmed = true
         var message = Message("pairConfirm"); message.pairingCode = pairingCode; peer?.send(message)
     }
@@ -477,6 +535,7 @@ struct NearbyMac: Identifiable {
     }
     private func cleanup() {
         pingTimer?.invalidate(); drainTimer?.invalidate(); pingTimer = nil; drainTimer = nil
+        pendingPeerChannels.removeAll(); peerChannelRequests.removeAll(); lastPeerIdentify.removeAll(); acceptsPeerDeviceControl = false
         for task in peerVolumeTasks.values { task.cancel() }; peerVolumeTasks.removeAll(); pendingPeerVolumes.removeAll(); volumePeers = []; peersCanControlClientVolume = false
         hostVolumeTask?.cancel(); hostVolumeTask = nil; hostVolumeRequestID = nil; pendingHostVolume = nil; canControlHostVolume = false; hostCanControlClientVolume = false; supportsVolumeControl = false
         identifierSound.stop(); paired = false; pairingCode = ""; codeConfirmed = false; encrypted = false; tlsSession = nil
@@ -496,6 +555,7 @@ struct NearbyMac: Identifiable {
                 status = tr("Pairing connection failed"); sessionPhase = "Stopped"; return
             }
         }
+        AppLog.shared.record("Listen",tr("Retrying connection in 2 seconds"),level:.warning)
         status = tr("Connection lost • reconnecting…"); sessionPhase = "Reconnecting"
         retry?.cancel()
         let task = DispatchWorkItem { [weak self] in
