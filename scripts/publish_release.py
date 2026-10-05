@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 import zipfile
 
 REPO = os.environ['GITHUB_REPOSITORY']
@@ -114,9 +115,13 @@ else:
     # A draft isolates upload failures. Publish only after every asset is present.
     gh('release', 'create', TAG, '--repo', REPO, '--target', TARGET, '--draft',
        '--title', f'MusicSync {TAG} — Web & multi-platform apps', '--notes-file', str(notes))
-    matches = [r for r in api('releases?per_page=100') if r['tag_name'] == TAG]
+    for retry in range(20):
+        matches = [r for r in api('releases?per_page=100') if r['tag_name'] == TAG]
+        if len(matches) == 1 and matches[0]['draft']:
+            break
+        time.sleep(1)
     if len(matches) != 1 or not matches[0]['draft']:
-        raise SystemExit('Draft creation verification failed')
+        raise SystemExit('Draft creation verification failed; rerun to resume')
     release = matches[0]
 
 release_id = release['id']
