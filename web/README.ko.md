@@ -27,7 +27,7 @@ npm start
 
 ## HTTPS 인증서
 
-안정적인 Web Audio와 WSS에는 신뢰된 HTTPS가 필요합니다. `npm run setup`은 localhost·현재 컴퓨터 이름·LAN IPv4 주소를 포함한 서버 인증서와 **개인 CA**를 생성합니다. 기존 키는 덮어쓰지 않습니다. 본인 기기에 **`.local/MusicSync-Web-CA.crt`만** 설치하고, 이 게이트웨이에서 가져온 파일인지 확인하세요. `ca.key`, `server.key`, `pairings.json`은 공유하면 안 됩니다. 브라우저 보안을 끄거나 인증서 검증을 비활성화하지 마세요. CA를 신뢰하면 그 CA에 TLS 신뢰 권한이 생기므로 컴퓨터를 보호하고 사용 종료 시 기기에서 제거하세요.
+안정적인 Web Audio와 WSS에는 신뢰된 HTTPS가 필요합니다. `npm run setup`은 localhost·현재 컴퓨터 이름·LAN IPv4 주소를 포함한 서버 인증서와 **개인 CA**를 생성합니다. 기존 키는 덮어쓰지 않습니다. 본인 기기에 **`.local/MusicSync-Web-CA.crt`만** 설치하고, 이 게이트웨이에서 가져온 파일인지 확인하세요. `ca.key`, `server.key`은 공유하면 안 됩니다. 브라우저 보안을 끄거나 인증서 검증을 비활성화하지 마세요. CA를 신뢰하면 그 CA에 TLS 신뢰 권한이 생기므로 컴퓨터를 보호하고 사용 종료 시 기기에서 제거하세요.
 
 - macOS: 키체인 접근으로 CA를 가져와 SSL 신뢰를 지정합니다.
 - iOS/iPadOS: AirDrop/파일로 CA를 가져와 설정에서 프로파일을 설치한 뒤, **일반 → 정보 → 인증서 신뢰 설정**에서 전체 신뢰를 활성화합니다. 인증서 경고만 넘기면 Safari 보안 API가 안정적으로 동작하지 않을 수 있습니다. 웹 수신에는 마이크·화면 녹화 권한이 필요 없습니다.
