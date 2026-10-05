@@ -1,6 +1,6 @@
 # MusicSync
 
-## Use your iPhones or Macs as stereo speaker!!
+## Use your iPhone(s) or Mac(s) as stereo speaker!!
 
 MusicSync streams Mac system audio or music files hosted on iPhone to nearby Macs and iPhones, scheduling all speakers against one presentation timeline. Each app has Host and Listen tabs, with optional left/right stereo pairing. Swift / SwiftUI, Apple frameworks only, no cloud, no audio driver installation. Requires **macOS 26.0+ and iOS 26.0+**. The committed Xcode project opens directly; CI builds with Xcode 26.6 to catch accidental newer API use.
 
