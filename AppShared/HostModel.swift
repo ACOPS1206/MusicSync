@@ -61,7 +61,6 @@ struct ConnectedDevice: Identifiable {
     @Published var localDrops = 0
     @Published var lastUpdated = Date()
     private var health = SyncHealthMonitor()
-    private var meter = TrafficMeter()
     private var statusTimer: Timer?
     private var peakScheduleError = 0.0
     private var lastPCM = 0.0
@@ -114,18 +113,14 @@ struct ConnectedDevice: Identifiable {
         broadcastHostVolume()
     } }
     private var volumeTasks: [UUID:DispatchWorkItem] = [:]
-    @Published var calibrationMS = 0.0
+    @Published var calibrationMS = 0.0 { didSet { configureAudio() } }
     private var listener: NWListener?
     private var peers: [UUID: Peer] = [:]
     private var capture: AudioCapture?
     private let player = PCMPlayer()
+    private lazy var audio = HostAudioPipeline(player:player)
     private var delay = DelayController()
-    private var sequence: UInt64 = 0
     private var epoch: UInt64 = 0
-    private var nextPTS: Double?
-    private var lastPublished = 0.0
-    private var toneTimer: Timer?
-    private var phase = 0.0
     private var observer: NSObjectProtocol?
     init(volumeEndpoint: VolumeEndpoint = VolumeEndpoint()) {
         self.volumeEndpoint = volumeEndpoint
@@ -322,7 +317,7 @@ struct ConnectedDevice: Identifiable {
             if let raw = message.outputChannel, let channel = OutputChannel(rawValue:raw) { devices[index].effectiveChannel = channel }
             if previousChannel != devices[index].effectiveChannel || previousSelection != devices[index].channelSelection || previousState != devices[index].playbackState { broadcastVolumePeers() }
             let previous = delay.target
-            delay.update(rtt:rtt,jitter:jitter,requested:requested); latency = delay.target
+            delay.update(rtt:rtt,jitter:jitter,requested:requested); latency = delay.target; configureAudio()
             if delay.target - previous > 0.001 { AppLog.shared.record("Host",String(format:tr("Shared buffer increased to %.0f ms"),latency * 1000)) }
             var timeline = Message("timeline"); timeline.latency = latency; peer.send(timeline)
         }
@@ -424,6 +419,7 @@ struct ConnectedDevice: Identifiable {
         var denied = Message("peerControlDenied"); denied.targetPeerID = target; peers[source]?.send(denied)
     }
     private func broadcastVolumePeers() {
+        configureAudio()
         let approved = devices.filter { $0.gate.approved && !$0.rejected && $0.supportsVolumeControl }
         for recipient in approved {
             var roster = Message("volumePeers")
@@ -476,6 +472,7 @@ struct ConnectedDevice: Identifiable {
         }
     }
     private func sendLayout() {
+        configureAudio()
         var message = Message("hostChannel"); message.outputChannel = layout.remoteChannel.rawValue
         for device in devices where device.gate.approved { peers[device.id]?.send(message) }
     }
@@ -494,9 +491,9 @@ struct ConnectedDevice: Identifiable {
         guard active, !streaming, !busy else { return }
         busy = true; defer { busy = false }
         error = nil; delay = DelayController(); latency = delay.target
-        sequence = 0; epoch += 1; nextPTS = nil
+        epoch += 1
         isMonitor = mode == 1 && !testTone && fileURL == nil
-        lastPCM = SyncClock.now; localDrops = 0; peakScheduleError = 0; health = SyncHealthMonitor(startedAt:SyncClock.now); syncWarmupRemaining = SyncHealthPolicy.warmupDuration; meter = TrafficMeter()
+        lastPCM = SyncClock.now; localDrops = 0; peakScheduleError = 0; health = SyncHealthMonitor(startedAt:SyncClock.now); syncWarmupRemaining = SyncHealthPolicy.warmupDuration
         sessionPhase = "Synchronizing"
         do {
             #if os(macOS)
@@ -504,11 +501,10 @@ struct ConnectedDevice: Identifiable {
             #else
             try player.start()
             #endif
+            configureAudio()
+            audio.start(epoch:epoch,monitor:isMonitor,testTone:testTone)
             if testTone {
-                phase = 0
                 streaming = true; status = tr("Synchronized test tone"); sessionPhase = "Streaming"
-                toneTimer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.tone()  } }
-                if let toneTimer { RunLoop.main.add(toneTimer, forMode: .common) }
             } else {
                 let sourceEpoch = epoch
                 let source: AudioCapture
@@ -535,12 +531,8 @@ struct ConnectedDevice: Identifiable {
                 #endif
                 }
                 capture = source
-                source.onPCM = { [weak self] data, frames, time in
-                    DispatchQueue.main.async {
-                        guard let self, self.epoch == sourceEpoch else { return }
-                        self.broadcast(data, frames: frames, captureTime: time)
-                    }
-                }
+                let pipeline = audio
+                source.onPCM = { data, frames, time in pipeline.submit(data,frames:frames,captureTime:time,epoch:sourceEpoch) }
                 streaming = true
                 try await source.start()
                 guard active, capture === source else { await source.stop(); streaming = false; return }
@@ -550,62 +542,20 @@ struct ConnectedDevice: Identifiable {
         } catch {
             self.error = error.localizedDescription
             streaming = false; sessionPhase = active ? "Waiting" : "Stopped"
-            await capture?.stop(); capture = nil; player.stop()
+            await capture?.stop(); capture = nil; audio.stop()
         }
     }
     func stopStreaming() async {
-        streaming = false; toneTimer?.invalidate(); toneTimer = nil
-        await capture?.stop(); capture = nil; player.stop(); nextPTS = nil
+        streaming = false; audio.stop()
+        await capture?.stop(); capture = nil
         var message = Message("stop"); message.epoch = epoch
         for device in devices where device.gate.approved { peers[device.id]?.send(message) }
         status = active ? tr("Host available on LAN") : tr("Stopped")
         sessionPhase = active ? "Waiting" : "Stopped"; health = SyncHealthMonitor(); syncIssues = []; isMonitor = false
     }
-    private func tone() {
-        var samples = [Float](repeating: 0, count: 960)
-        for frame in 0..<480 {
-            // A short pulse each second makes acoustic alignment easy to hear.
-            let seconds = phase / 48_000
-            let value = seconds.truncatingRemainder(dividingBy: 1) < 0.1 ? Float(sin(phase * 2 * .pi * 880 / 48_000)) * 0.12 : 0
-            var left = value, right = value
-            let pulse = seconds.truncatingRemainder(dividingBy: 1)
-            if layout != .stereo {
-                if (0.25..<0.35).contains(pulse) { left = Float(sin(phase * 2 * .pi * 440 / 48_000)) * 0.12 }
-                if (0.5..<0.6).contains(pulse) { right = Float(sin(phase * 2 * .pi * 660 / 48_000)) * 0.12 }
-            }
-            samples[frame * 2] = left; samples[frame * 2 + 1] = right; phase += 1
-        }
-        let data = samples.withUnsafeBytes { Data($0) }
-        broadcast(data, frames: 480, captureTime: SyncClock.now)
-    }
-    private func broadcast(_ data: Data, frames: Int, captureTime: Double) {
-        guard streaming else { return }
-        let now = SyncClock.now; lastPCM = now
-        if sequence == 0 { health = SyncHealthMonitor(startedAt:now); syncIssues = []; syncWarmupRemaining = SyncHealthPolicy.warmupDuration }
-        // Keep the audio sample timeline continuous; callback arrival is not the presentation clock.
-        let earliest = captureTime + delay.target
-        if nextPTS == nil { nextPTS = max(earliest, now + delay.target) }
-        if nextPTS! < now + 0.06 { nextPTS = now + delay.target }
-        if earliest > nextPTS! + 0.03 { nextPTS = earliest }
-        var cursor = 0
-        while cursor < frames {
-            let count = min(480, frames - cursor)
-            var message = Message("audio")
-            message.sequence = sequence; sequence += 1; message.epoch = epoch
-            message.pts = nextPTS; message.sampleRate = 48_000; message.channels = 2; message.frames = count
-            message.latency = delay.target
-            message.outputChannel = layout.remoteChannel.rawValue; message.monitor = isMonitor
-            message.payload = data.subdata(in: (cursor * 8)..<((cursor + count) * 8))
-            nextPTS! += Double(count) / 48_000; cursor += count
-            player.calibration = calibrationMS / 1000
-            meter.record(bytes: message.payload?.count ?? 0)
-            if player.running {
-                if !player.schedule(message, offset: 0) { localDrops += 1 }
-                peakScheduleError = max(peakScheduleError, player.schedulingError)
-            }
-            for device in devices where device.ready && device.gate.approved { peers[device.id]?.send(message) }
-        }
-        if now - lastPublished > 1 { latency = delay.target; lastPublished = now }
+    private func configureAudio() {
+        let ready = devices.filter { $0.ready && $0.gate.approved && !$0.rejected }
+        audio.configure(peers:ready.compactMap { peers[$0.id] },delay:delay.target,trim:calibrationMS/1000,layout:layout)
     }
     var timingDevice: ConnectedDevice? { devices.filter(\.ready).max { $0.rtt / 2 + $0.jitter < $1.rtt / 2 + $1.jitter } }
     private func startStatusTimer() {
@@ -615,7 +565,8 @@ struct ConnectedDevice: Identifiable {
     }
     private func refreshStatus() {
         let now = SyncClock.now
-        traffic = meter.sample(now: now, drops: localDrops)
+        let snapshot = audio.sample()
+        traffic = snapshot.traffic; localDrops = snapshot.drops; peakScheduleError = snapshot.error; lastPCM = snapshot.lastAudio
         schedulingErrorMS = peakScheduleError * 1000
         var input = SyncHealthInput()
         input.uncertainty = devices.filter(\.ready).map { $0.rtt / 2 + $0.jitter }.max() ?? 0

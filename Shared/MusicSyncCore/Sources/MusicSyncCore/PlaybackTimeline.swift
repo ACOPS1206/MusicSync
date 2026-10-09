@@ -20,3 +20,20 @@ public struct PlaybackTimeline {
         return append ? nil : desired
     }
 }
+
+/// The common presentation delay must move by every positive increment, even below 30 ms.
+public struct HostPresentationTimeline {
+    public private(set) var nextTime: Double?
+    private var appliedDelay = 0.18
+    public init() {}
+    public mutating func begin(captureTime: Double, now: Double, delay: Double) -> Double {
+        if let nextTime {
+            self.nextTime = nextTime + max(0, delay-appliedDelay)
+        } else { nextTime = max(captureTime,now)+delay }
+        appliedDelay = max(appliedDelay,delay)
+        if nextTime! < now+0.06 { nextTime = now+delay }
+        if captureTime+delay > nextTime!+0.03 { nextTime = captureTime+delay }
+        return nextTime!
+    }
+    public mutating func advance(frames: Int) { nextTime! += Double(frames)/48000 }
+}

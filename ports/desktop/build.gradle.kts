@@ -3,6 +3,7 @@ plugins { kotlin("jvm"); id("org.jetbrains.compose"); id("org.jetbrains.kotlin.p
 kotlin { jvmToolchain(17); sourceSets.main { kotlin.srcDir("../ui") } }
 dependencies {
     implementation(project(":core"))
+    testImplementation(kotlin("test"))
     implementation(compose.desktop.currentOs)
     implementation("org.jetbrains.compose.material3:material3:1.9.0-alpha04")
     implementation("net.java.dev.jna:jna:5.17.0")
@@ -26,3 +27,5 @@ tasks.register<JavaExec>("interop") {
     mainClass.set("dev.musicsync.desktop.InteropKt")
     args(providers.gradleProperty("interopPort").orElse("49555").get())
 }
+
+tasks.test { useJUnitPlatform() }

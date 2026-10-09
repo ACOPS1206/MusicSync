@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {encode,Framer,code,proof} from '../protocol.mjs';
-import {ClockEstimate,JitterBuffer,decodePCM,audioTime,ScheduledAudio} from '../public/sync.mjs';
+import {ClockEstimate,JitterBuffer,decodePCM,audioTime,ScheduledAudio,PlaybackTimeline} from '../public/sync.mjs';
 const packet=(sequence=0,pts=10.2,epoch=1)=>{const bytes=Buffer.alloc(480*8);for(let i=0;i<960;i++)bytes.writeFloatLE(i%2?-.25:.25,i*4);return {version:1,kind:'audio',sequence,epoch,pts,frames:480,channels:2,sampleRate:48000,payload:bytes.toString('base64')}};
 test('Framing survives fragments and multiple packets; rejects hostile lengths',()=>{
   const f=new Framer(),data=Buffer.concat([encode({kind:'ping',t1:1}),encode({kind:'pong'})]);
@@ -41,4 +41,29 @@ test('Scheduling uses future timestamp, selected stereo channel and rejects late
   const c={currentTime:1,outputLatency:.05,createGain:()=>({connect(){},gain:{value:1}}),destination:{},createBuffer:()=>({getChannelData:i=>output[i]=new Float32Array(480)}),createBufferSource:()=>({connect(){},disconnect(){},start(t){started=t},stop(){}})};
   const p=new ScheduledAudio(c);p.channel='right';assert.equal(p.schedule(packet(),10.2,10),true);assert.ok(Math.abs(started-1.15)<1e-9);assert.equal(output[0][0],-.25);assert.equal(output[1][0],-.25);
   assert.equal(p.schedule(packet(),10.01,10),false);assert.equal(p.drops,1);
+});
+
+test('Consecutive PCM ignores clock noise while loss, shared delay and epochs reanchor',()=>{
+  const t=new PlaybackTimeline();
+  assert.equal(t.schedule(0,1,10.2,.01,10),10.2);
+  assert.ok(Math.abs(t.schedule(1,1,10.209,.01,10)-10.21)<1e-9);
+  assert.ok(Math.abs(t.schedule(2,1,10.221,.01,10)-10.22)<1e-9);
+  assert.equal(t.schedule(4,1,10.24,.01,10),10.24);
+  assert.equal(t.schedule(5,1,10.27,.01,10),10.27);
+  assert.equal(t.schedule(0,2,11.2,.01,11),11.2);
+});
+test('Thirty minutes of bounded clock noise preserves every sample boundary',()=>{
+  const t=new PlaybackTimeline();let previousEnd;
+  for(let i=0;i<180000;i++){
+    const desired=10+i*.01+Math.sin(i*.017)*.001;
+    const start=t.schedule(i,1,desired,.01,desired-.18);
+    if(previousEnd!==undefined)assert.equal(start,previousEnd);
+    previousEnd=start+.01;
+  }
+});
+test('Clear cancels old stream and resets the sample timeline',()=>{
+  const stops=[];const c={currentTime:10,destination:{},createGain:()=>({connect(){}})};
+  const p=new ScheduledAudio(c);p.sources.add({stop(){stops.push(true)},disconnect(){}});
+  p.timeline.schedule(0,1,10.2,.01,10);p.clear();
+  assert.equal(stops.length,1);assert.equal(p.sources.size,0);assert.equal(p.timeline.nextTime,undefined);
 });

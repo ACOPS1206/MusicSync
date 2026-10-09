@@ -28,7 +28,9 @@ private class Device(val peer: SecurePeer) {
 }
 /** All protocol state belongs to this executor. Audio and TLS threads never mutate UI state. */
 class Session(val platform: Platform, private val discoveryEnabled: Boolean = true) : AutoCloseable {
-    private val executor = Executors.newSingleThreadScheduledExecutor { r -> Thread(r,"MusicSync session").apply { isDaemon = true } }
+    @Volatile private var owner: Thread? = null
+    private val closing = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val executor = Executors.newSingleThreadScheduledExecutor { r -> Thread(r,"MusicSync session").apply { isDaemon = true; owner = this } }
     private val io = Executors.newCachedThreadPool { r -> Thread(r,"MusicSync IO").apply { isDaemon = true } }
     private val mutable = MutableStateFlow(Snapshot(volumeScope=if(platform.systemVolume) "system" else "app"))
     val state = mutable.asStateFlow()
@@ -308,7 +310,7 @@ class Session(val platform: Platform, private val discoveryEnabled: Boolean = tr
         }
     }
     fun stopStreaming()=post{stopStreamingInternal();publish()}
-    private fun stopStreamingInternal(){sourceGeneration++;runCatching{source?.close()};source=null;player.close();devices.values.filter{it.approved}.forEach{it.peer.send(Message("stop"))};snapshot=snapshot.copy(streaming=false,monitor=false,phase=if(server!=null)"Hosting"else"Ready")}
+    private fun stopStreamingInternal(){sourceGeneration++;player.close();runCatching{source?.close()};source=null;devices.values.filter{it.approved}.forEach{it.peer.send(Message("stop"))};snapshot=snapshot.copy(streaming=false,monitor=false,phase=if(server!=null)"Hosting"else"Ready")}
     private fun tick(){
         val now=Clock.now()
         if(player.failure.isNotEmpty()&&snapshot.error!=player.failure){snapshot=snapshot.copy(error=player.failure);log("Audio output failed: ${player.failure}")}
@@ -337,7 +339,16 @@ class Session(val platform: Platform, private val discoveryEnabled: Boolean = tr
     private fun publishIfDue(){val now=Clock.now();if(now-lastPublish>=.25){lastPublish=now;publish()}}
     fun diagnostic(message:String)=post{log(message);publish()}
     fun clearLogs()=post{synchronized(logs){logs.clear()};publish()}
-    override fun close(){post{disconnectInternal();stopHostInternal();discovery.close();executor.shutdown();io.shutdownNow()}}
+    override fun close(){
+        if(!closing.compareAndSet(false,true))return
+        val finish={
+            try { disconnectInternal();stopHostInternal();discovery.close();publish() }
+            finally { executor.shutdown();io.shutdownNow() }
+        }
+        // Window disposal must finish routing restoration before daemon threads disappear.
+        if(Thread.currentThread()===owner)finish()
+        else executor.submit { finish() }.get(15,TimeUnit.SECONDS)
+    }
     companion object {
         fun validVolume(v:Double?)=v?.takeIf{it.isFinite()&&it in 0.0..1.0}
         fun validSelection(v:String?)=v?.takeIf{it in listOf("automatic","stereo","left","right")}
