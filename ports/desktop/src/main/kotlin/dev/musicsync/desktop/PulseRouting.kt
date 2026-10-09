@@ -20,7 +20,7 @@ internal class PulseRouting(private val commands: PulseCommands = Pactl(), priva
     val virtual = "musicsync_${pid}_${java.util.UUID.randomUUID().toString().take(8)}"
     private var module: String? = null
     private var changedDefault = false
-    private var closed = false
+    @Volatile private var closed = false
     private fun list(kind: String) = Json.parseToJsonElement(commands.call(listOf("-f","json","list",kind))).jsonArray.map{it.jsonObject}
     private fun index(name: String) = list("sinks").single{it["name"]?.jsonPrimitive?.content==name}["index"]!!.jsonPrimitive.content
     private fun processID(stream: JsonObject) = stream["properties"]?.jsonObject?.get("application.process.id")?.jsonPrimitive?.content

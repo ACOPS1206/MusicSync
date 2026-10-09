@@ -25,7 +25,8 @@ final class PCMPlayer: @unchecked Sendable {
     var calibration: Double { get { queue.sync { trim } } set { queue.sync { trim = newValue } } }
     private var selection = OutputChannel.stereo
     var channel: OutputChannel { get { queue.sync { selection } } set { queue.sync { selection = newValue } } }
-    var outputLatency: Double {
+    var outputLatency: Double { queue.sync { latencyOnQueue } }
+    private var latencyOnQueue: Double {
         #if os(iOS)
         return AVAudioSession.sharedInstance().outputLatency + AVAudioSession.sharedInstance().ioBufferDuration
         #else
@@ -62,7 +63,7 @@ final class PCMPlayer: @unchecked Sendable {
                 }
             }
         }
-        let renderTime = pts - offset - outputLatency + trim
+        let renderTime = pts - offset - latencyOnQueue + trim
         let now = SyncClock.now
         guard renderTime > now + 0.003 else { error = max(0, now + 0.003 - renderTime); return false }
         let previousEnd = timeline.queuedUntil
