@@ -61,7 +61,7 @@ struct ConnectedDevice: Identifiable {
     @Published var localDrops = 0
     @Published var lastUpdated = Date()
     private var health = SyncHealthMonitor()
-        private var statusTimer: Timer?
+    private var statusTimer: Timer?
     private var peakScheduleError = 0.0
     private var lastPCM = 0.0
     private var isMonitor = false

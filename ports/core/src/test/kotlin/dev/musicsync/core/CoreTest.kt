@@ -103,6 +103,22 @@ class CoreTest {
         val source=WaveSource(ByteArrayInputStream(pcm.array()));val samples=source.read()!!;assertEquals(960,samples.size);assertTrue(samples.all{it==.25f});assertNull(source.read());source.close()
     }
 
+    @Test fun closingSessionWaitsForCaptureCleanup(){
+        val opened=CompletableFuture<Unit>();val cleaned=java.util.concurrent.atomic.AtomicBoolean(false)
+        val platform=object:Platform{
+            override val name="Cleanup test";override val store=MemoryStore()
+            override fun sink():AudioSink=error("Monitor capture must not replay locally")
+            override fun fileSource(file:String):AudioSource=error("Unused")
+            override fun captureSource():AudioSource=object:AudioSource{
+                override val monitor=true
+                override fun read():FloatArray?{opened.complete(Unit);Thread.sleep(10);return if(cleaned.get())null else FloatArray(960)}
+                override fun close(){Thread.sleep(20);cleaned.set(true)}
+            }
+        }
+        val session=Session(platform,false);session.setRole("Host");session.startHost();session.streamCapture()
+        opened.get(5,TimeUnit.SECONDS);session.close()
+        assertTrue(cleaned.get());assertFalse(session.state.value.hostActive);session.close()
+    }
     @Test fun realSessionRequiresApprovalAndEnforcesHostVolumePermission(){
         val platform=object:Platform{
             override val name="Protocol test Host";override val store=MemoryStore()

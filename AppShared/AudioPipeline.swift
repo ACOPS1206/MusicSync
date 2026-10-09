@@ -117,6 +117,7 @@ final class ClientAudioPipeline: @unchecked Sendable {
     private var clockReady = false
     private var interrupted = false
     private var selection = ChannelSelection.automatic
+    private var configuredChannel = OutputChannel.stereo
     private var meter = TrafficMeter()
     private var snapshot = Snapshot()
     private var timer: DispatchSourceTimer?
@@ -130,7 +131,8 @@ final class ClientAudioPipeline: @unchecked Sendable {
     func configure(ready: Bool, offset: Double, selection: ChannelSelection, hostChannel: OutputChannel, trim: Double) {
         queue.async { [self] in
             clockReady = ready; self.offset = offset; self.selection = selection
-            if snapshot.epoch == nil { snapshot.channel = hostChannel }; player.calibration = trim
+            if snapshot.epoch == nil || configuredChannel != hostChannel { snapshot.channel = hostChannel }
+            configuredChannel = hostChannel; player.calibration = trim
         }
     }
     func receive(_ packet: Message, session: UUID) { queue.async { [self] in

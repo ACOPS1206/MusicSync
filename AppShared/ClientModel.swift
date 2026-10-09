@@ -27,7 +27,7 @@ struct NearbyMac: Identifiable {
     @Published var schedulingErrorMS = 0.0
     @Published var lastUpdated = Date()
     private var health = SyncHealthMonitor()
-        private var lastPong = 0.0
+    private var lastPong = 0.0
     private var peakScheduleError = 0.0
     private var monitorMode = false
     private var audioInterrupted = false
@@ -108,7 +108,7 @@ struct NearbyMac: Identifiable {
     private var applyingVolumeCommand = false
     private var hostVolumeTask: DispatchWorkItem?
     private var hostVolumeRequestID: String?
-    @Published var calibrationMS = 0.0
+    @Published var calibrationMS = 0.0 { didSet { configureAudio() } }
     @Published var channelOverride = ChannelSelection.automatic { didSet { reportChannel() } }
     @Published var hostChannel = OutputChannel.stereo { didSet { reportChannel() } }
     @Published var directAddress = ""
@@ -437,6 +437,7 @@ struct NearbyMac: Identifiable {
     }
     func reportChannel(requestID: String? = nil) {
         guard paired else { return }
+        configureAudio()
         player.channel = effectiveChannel
         var message = Message("channelReport"); message.channelSelection = channelOverride.rawValue
         message.playbackState = sessionPhase
