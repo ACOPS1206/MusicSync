@@ -217,3 +217,7 @@ All three ports are in this repository under [`ports/`](ports/README.md), with M
 ## Session-only pairing
 
 Pairing is session-only: secrets, Host public-key pins and device permissions are kept in memory, never remembered after app restart. Existing persisted pairing records are removed on first launch of this version. Restarting either endpoint requires comparing the eight-digit code again and approving on the Host. Automatic reconnection within the same running session still uses TLS-bound proofs and a pinned key; a key change within that session requires explicitly forgetting the pairing. The Host TLS identity remains separately persistent; losing it is recoverable by restarting the Client and reapproving. TLS encryption is always required.
+
+## Playback continuity patch
+
+Apple PCM packetization, transport encoding/decoding and Client jitter draining now use dedicated serial queues; UI status is sampled every 500 ms. Every positive shared-delay increment moves the actual Host presentation timeline. Browser and Kotlin playback preserve consecutive sample boundaries under small clock-estimate changes. Desktop/Android identification mixes independently of streamed music. See [platform capture setup](ports/README.md#synchronized-system-capture) for Linux silent-sink routing, Windows virtual-device capture and Android's monitor-only system sharing.

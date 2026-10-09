@@ -4,12 +4,14 @@ package dev.musicsync.desktop
 import com.sun.jna.Library
 import com.sun.jna.Native
 import com.sun.jna.Pointer
+import com.sun.jna.WString
 import dev.musicsync.core.AudioSink
 import dev.musicsync.core.Clock
 import java.io.File
 
 interface RenderLibrary : Library {
     fun ms_render_open(): Pointer?
+    fun ms_render_open_device(name: WString): Pointer?
     fun ms_render_last_error(): Int
     fun ms_render_latency(context: Pointer): Double
     fun ms_render_position(context: Pointer, result: DoubleArray): Int
@@ -38,7 +40,8 @@ class WindowsSink : AudioSink {
     private fun failure()="WASAPI output failed (0x${library.ms_render_last_error().toUInt().toString(16)}). Check the selected Windows speaker."
     override fun start(){
         owner=Thread.currentThread()
-        val value=library.ms_render_open()?:error(failure())
+        val name=System.getenv("MUSICSYNC_OUTPUT_DEVICE")?.takeIf{it.isNotBlank()}
+        val value=(if(name==null)library.ms_render_open()else library.ms_render_open_device(WString(name)))?:error(failure())
         synchronized(lock){pointer=value;if(stopped)library.ms_render_stop(value)}
         measuredLatency=library.ms_render_latency(value).also{require(it.isFinite()&&it in 0.0..2.0)}
     }

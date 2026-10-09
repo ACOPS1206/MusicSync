@@ -36,7 +36,7 @@ private val korean = mapOf(
     "Clock uncertainty" to "시계 불확실성", "Output latency" to "출력 지연", "Scheduling error" to "예약 재생 오차", "Queued packets" to "대기 패킷", "Dropped packets" to "드롭 수",
     "Calibration" to "수동 출력 보정", "Logs" to "로그", "Help" to "도움말", "Clear" to "지우기", "Close" to "닫기", "Copyable session log" to "복사 가능한 세션 로그",
     "Direct connection" to "주소로 연결", "Host Bonjour address" to "호스트 Bonjour 주소", "Forget pairing" to "페어링 삭제", "Remove pairing" to "기기 페어링 삭제",
-    "Permissions are managed by the Host." to "제어 권한은 호스트에서 설정합니다.", "Monitor mode: original Host output is ahead. Use WAV hosting for synchronized local output." to "모니터 모드: 호스트 원래 출력이 먼저 들립니다. 로컬 출력도 맞추려면 WAV 파일을 호스팅하세요.",
+    "Permissions are managed by the Host." to "제어 권한은 호스트에서 설정합니다.", "Monitor mode: original Host output is ahead. Use WAV hosting to synchronize this Host speaker too." to "모니터 모드: 호스트 원래 출력이 먼저 들립니다. 이 호스트 스피커까지 맞추려면 WAV 파일을 호스팅하세요. Android 시스템 캡처는 원본 출력을 지연시킬 수 없습니다.",
     "Synchronization warnings start after 30 seconds and require 5 seconds of sustained error." to "동기화 경고는 30초 준비 후, 오류가 5초간 지속될 때 표시됩니다.",
     "Share a LAN with other speakers. Approve only a matching pairing code. No cloud server is used." to "스피커를 같은 LAN에 연결하세요. 페어링 코드가 일치하는 기기만 승인하세요. 클라우드 서버는 사용하지 않습니다.",
     "RTT is a network round trip. Buffer adds shared delay so speakers can play at a planned time. These estimates do not measure acoustic speaker error." to "RTT는 네트워크 왕복 시간입니다. 버퍼는 스피커가 예약된 시각에 재생할 시간을 확보합니다. 표시된 추정값은 실제 스피커 간 음향 오차 측정값이 아닙니다.",
@@ -143,7 +143,7 @@ private val korean = mapOf(
                         }
                         Text(t("Calibration")+" %.0f ms".format(calibration));Slider(value=calibration,onValueChange={calibration=it},onValueChangeFinished={session.setCalibration(calibration.toDouble())},valueRange=-30f..30f)
                     }}
-                    if(state.monitor)item{InfoCard("",t("Monitor mode: original Host output is ahead. Use WAV hosting for synchronized local output."),true)}
+                    if(state.monitor)item{InfoCard("",t("Monitor mode: original Host output is ahead. Use WAV hosting to synchronize this Host speaker too."),true)}
                     if(state.warning.isNotEmpty())item{InfoCard(t("Latency & synchronization"),if(ko)"시계 불확실성 %.1f ms · RTT %.1f ms · 예약 오차 %.1f ms\nWi-Fi 혼잡이나 오디오 출력 경로 지연을 확인하세요.".format(state.uncertainty*1000,state.rtt*1000,state.scheduleError*1000)else state.warning,true)}
                     item{Section(t("Live status")){
                         Text(t(state.phase),style=MaterialTheme.typography.titleLarge)

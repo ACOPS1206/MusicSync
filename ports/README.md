@@ -17,7 +17,7 @@ These are real Host/Listen applications with a shared Kotlin protocol implementa
 
 **PCM WAV file hosting is the synchronized mode on all ports.** Choose a mono/stereo PCM16/24/32 or Float32 WAV (8–192 kHz). It is decoded incrementally, linearly resampled to 48 kHz interleaved Float32 stereo, timestamped on one continuous sample timeline and played locally and remotely at that timeline. No full-file memory loading. Both original channels stay on the wire; each device can select Stereo/Left/Right/Follow Host. Pause, seek, playlists, AAC/MP3 file decoding and high-quality band-limited resampling are not implemented in these ports.
 
-**System sharing is monitor mode.** Windows uses default-output WASAPI loopback. Linux uses the current PulseAudio/PipeWire-Pulse default sink monitor (`pactl`/`parec`). Android uses a user-approved MediaProjection token and AudioRecord playback capture, excluding MusicSync's UID. Android source apps can reject capture; DRM/protected content can yield silence. Monitor mode sends captured sound to receivers but **does not mute/delay the source app's existing local output**, so that original speaker is ahead. It does not add delayed local replay. Use WAV hosting when Host and Clients must be synchronized. Windows/Linux monitor captures may include the Host identification tone; unlike Android's UID exclusion, it is not per-process capture.
+**System sharing depends on the platform.** Linux can route source audio through a temporary silent sink and replay it on the common timeline. Windows can do the same with explicitly selected virtual and physical devices; its default capture remains monitor-only. Android system sharing stays monitor-only. See synchronized capture setup below. Monitor capture does not delay the original Host speaker; use WAV hosting for synchronized local output without routing setup.
 
 Clients use repeated four-timestamp probes. The lowest eight RTT samples from the latest 32 estimate Host-minus-Client clock offset; RTT variance estimates network jitter. After eight samples the receiver queues frames, rejects invalid/duplicate/late/old-epoch frames, and schedules against the converted PTS. Queue limit: 100 packets. Shared delay starts at 180 ms and can increase to 500 ms according to Client RTT/jitter/output needs and 20 ms requests after new late/drop events, never decreases midstream. Every packet carries version/sequence/epoch/PTS/sample-rate/channel-count/frame-count/payload; JSON is length-prefixed and Float32 PCM is little-endian/base64, identical to Swift.
 
@@ -92,3 +92,19 @@ The TLS send backlog discards older queued audio before it becomes stale, while 
 ## Session-only pairing
 
 Pairing is session-only: secrets, Host public-key pins and device permissions are kept in memory, never remembered after app restart. Existing persisted pairing records are removed on first launch of this version. Restarting either endpoint requires comparing the eight-digit code again and approving on the Host. Automatic reconnection within the same running session still uses TLS-bound proofs and a pinned key; a key change within that session requires explicitly forgetting the pairing. The Host TLS identity remains separately persistent; losing it is recoverable by restarting the Client and reapproving. TLS encryption is always required.
+
+## Synchronized system capture
+
+Linux system sharing now creates a temporary silent PulseAudio/PipeWire-Pulse sink, moves existing streams from the original default speaker into it, and sends MusicSync's delayed playback to the original speaker. Install `pactl` and `parec`; JavaSound must use the PulseAudio output. Stopping capture restores streams and the default output and removes the temporary module. A default output selected independently during sharing is preserved. Set `MUSICSYNC_MONITOR_CAPTURE=1` before launching to use the original monitor-only path. Abrupt process termination cannot run cleanup; use `pactl set-default-sink <speaker>` and unload the MusicSync null-sink module if needed.
+
+Windows synchronized capture requires an **already installed virtual playback device**. Route the source application's output to that virtual device and disable its direct monitoring. Launch MusicSync with the exact device names:
+
+```powershell
+$env:MUSICSYNC_CAPTURE_DEVICE = 'CABLE Input (VB-Audio Virtual Cable)'
+$env:MUSICSYNC_OUTPUT_DEVICE = 'Speakers (your physical audio device)'
+# Launch the MusicSync executable from this PowerShell session.
+```
+
+The capture and playback endpoints must differ; missing, duplicate, or identical endpoint names are rejected. Without `MUSICSYNC_CAPTURE_DEVICE`, Windows keeps its existing monitor-only capture. MusicSync does not install a virtual audio driver or change the Windows default output. Audio device changes require stopping and restarting capture.
+
+Android system sharing remains monitor capture because MediaProjection cannot delay the original application's speaker output. Use WAV hosting when synchronizing the Android Host speaker with other devices. Identification tones are mixed independently of music on Android and desktop, and no longer replace a second of streamed audio.

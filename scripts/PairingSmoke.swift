@@ -40,6 +40,7 @@ struct SmokeFailure: Error { let message: String }
         try require(SecItemCopyMatching(lookup as CFDictionary,nil) == errSecItemNotFound,"Pairing must never be persisted in Keychain")
         try PairingStore.remove(account)
         try require(PairingStore.read(account) == nil,"Explicit forget must clear session pairing")
+        try verifyAudioFastPathAuthorization()
         try verifySystemVolumeEndpoint()
         try await clientRejectsUnverifiedApproval(wrongCode:false)
         try await clientRejectsUnverifiedApproval(wrongCode:true)
@@ -193,6 +194,22 @@ struct SmokeFailure: Error { let message: String }
         try require(model.outputVolume == 0.2 && writes == 1,"Hardware button changes must refresh without a feedback write")
         writable = false; model.refreshOutputVolume(); model.outputVolume = 0.9
         try require(!model.volumeAvailable && model.outputVolume == 0.2 && hardware == 0.2 && model.error != nil,"Unsupported system volume must fail visibly without claiming success")
+    }
+    @MainActor static func verifyAudioFastPathAuthorization() throws {
+        let audio = ClientAudioPipeline(player:PCMPlayer()); let session = UUID()
+        var packet = Message("audio"); packet.sequence = 0; packet.epoch = 1
+        packet.pts = SyncClock.now+0.18; packet.sampleRate = 48000; packet.channels = 2; packet.frames = 480
+        packet.payload = Data(repeating:0,count:3840)
+        audio.receive(packet,session:session)
+        try require(audio.sample().lastAudio == 0,"Fast path must reject unapproved audio")
+        audio.begin(session:session)
+        audio.receive(packet,session:session)
+        try require(audio.sample().lastAudio == 0,"Fast path must wait for clock readiness")
+        audio.configure(ready:true,offset:0,selection:.automatic,hostChannel:.stereo,trim:0)
+        audio.receive(packet,session:UUID())
+        try require(audio.sample().lastAudio == 0,"Late callbacks from another connection must be ignored")
+        audio.end(); audio.receive(packet,session:session)
+        try require(audio.sample().lastAudio == 0,"Disconnected fast path must reject stale audio")
     }
     @MainActor static func verifyHostVolume(_ host: HostModel, probe: Probe, id: UUID, volume: Double, accepted: Bool) async throws {
         let request = UUID().uuidString

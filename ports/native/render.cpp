@@ -40,7 +40,8 @@ struct Render {
     }
 };
 API int ms_render_last_error(){return static_cast<int>(lastError);}
-API void* ms_render_open() {
+extern "C" int ms_lookup_render_device(const wchar_t* name,wchar_t* id,int capacity);
+static void* render_open(const wchar_t* name) {
     auto* r = new Render;
     HRESULT result = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     if(SUCCEEDED(result))r->com=true;
@@ -52,7 +53,11 @@ API void* ms_render_open() {
     BYTE* initial = nullptr;
 #define CHECK(call) do { result=(call);if(FAILED(result)){lastError=result;delete r;return nullptr;} } while(0)
     CHECK(CoCreateInstance(__uuidof(MMDeviceEnumerator),nullptr,CLSCTX_ALL,__uuidof(IMMDeviceEnumerator),reinterpret_cast<void**>(&r->enumerator)));
-    CHECK(r->enumerator->GetDefaultAudioEndpoint(eRender,eConsole,&r->device));
+    if(name&&*name){
+        wchar_t id[1024]{};
+        if(!ms_lookup_render_device(name,id,1024)){lastError=HRESULT_FROM_WIN32(ERROR_NOT_FOUND);delete r;return nullptr;}
+        CHECK(r->enumerator->GetDevice(id,&r->device));
+    } else { CHECK(r->enumerator->GetDefaultAudioEndpoint(eRender,eConsole,&r->device)); }
     CHECK(r->device->Activate(__uuidof(IAudioClient),CLSCTX_ALL,nullptr,reinterpret_cast<void**>(&r->client)));
     // The engine converts fixed 48 kHz float stereo to the selected hardware mix format.
     CHECK(r->client->Initialize(AUDCLNT_SHAREMODE_SHARED,AUDCLNT_STREAMFLAGS_EVENTCALLBACK|AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM|AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY,200000,0,&format,nullptr));
@@ -73,6 +78,8 @@ API void* ms_render_open() {
 #undef CHECK
     lastError=S_OK;return r;
 }
+API void* ms_render_open() { return render_open(nullptr); }
+API void* ms_render_open_device(const wchar_t* name) { return render_open(name); }
 API double ms_render_latency(void* context){return static_cast<Render*>(context)->latency;}
 // Results: submitted-stream frame at hardware position, age of QPC sample (seconds),
 // native call midpoint QPC correction. JVM maps age to its own nanoTime epoch.

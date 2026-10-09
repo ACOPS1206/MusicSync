@@ -30,6 +30,25 @@ class CoreTest {
         q.insert(m(2,9.0));assertEquals(0,q.take(10.0,0.0).size);assertEquals(1,q.drops);repeat(120){q.insert(m(it+3L,20.0))};assertEquals(100,q.size)
         assertTrue(q.insert(m(1,30.0,2)));q.insert(m(500,30.0,1));assertEquals(1,q.size)
     }
+    @Test fun identificationMixesWithoutBlockingMusicAndResetClearsActiveSamples(){
+        val music=SampleLane();val effects=SampleLane()
+        music.add(FloatArray(960){.25f},10.0);music.add(FloatArray(960){.5f},10.01)
+        effects.add(FloatArray(96000){.1f},10.0,false)
+        val first=FloatArray(960);music.mix(first,10.0,1f,"stereo");effects.mix(first,10.0,1f,"stereo")
+        assertTrue(first.all{kotlin.math.abs(it-.35f)<1e-6})
+        val second=FloatArray(960);music.mix(second,10.01,1f,"stereo");effects.mix(second,10.01,1f,"stereo")
+        assertTrue(second.all{kotlin.math.abs(it-.6f)<1e-6});assertEquals(0,music.drops)
+        effects.clear();val silent=FloatArray(960);effects.mix(silent,10.02,1f,"stereo");assertTrue(silent.all{it==0f})
+    }
+    @Test fun sampleLaneIgnoresClockNoiseButPreservesSharedDelayGaps(){
+        val music=SampleLane();music.add(FloatArray(960){.25f},10.0)
+        music.add(FloatArray(960){.5f},10.009)
+        val first=FloatArray(960);music.mix(first,10.0,1f,"stereo")
+        val second=FloatArray(960);music.mix(second,10.01,1f,"stereo");assertTrue(second.all{it==.5f})
+        music.add(FloatArray(960){.75f},10.04)
+        val gap=FloatArray(960);music.mix(gap,10.02,1f,"stereo");assertTrue(gap.all{it==0f})
+        music.mix(gap,10.04,1f,"stereo");assertTrue(gap.all{it==.75f})
+    }
     @Test fun outputClockIncludesStartupQueueAndRecoversHardwareDiscontinuity(){
         // Endpoint clock is still inside prefilled silence: frame -960 is now,
         // so submitted frame zero is audible 20 ms later, not now.

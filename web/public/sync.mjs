@@ -35,16 +35,28 @@ export function audioTime(context,presentation,now){
   if(stamp&&stamp.contextTime>0&&stamp.performanceTime>0)return stamp.contextTime+(presentation-stamp.performanceTime/1000);
   return context.currentTime+(presentation-now)-(context.outputLatency||context.baseLatency||0);
 }
+// Sequence-aware sample continuity. Shared delay changes and loss retain their timestamps.
+export class PlaybackTimeline {
+  nextTime;sequence;epoch;
+  schedule(sequence,epoch,desired,duration,now){
+    const consecutive=this.epoch===epoch&&sequence===this.sequence+1;
+    const append=consecutive&&this.nextTime>now+.003&&Math.abs(desired-this.nextTime)<=.002;
+    const start=append?this.nextTime:desired;
+    this.nextTime=start+duration;this.sequence=sequence;this.epoch=epoch;
+    return start;
+  }
+}
 export class ScheduledAudio {
-  constructor(context){this.context=context;this.gain=context.createGain();this.gain.connect(context.destination);this.sources=new Set();this.drops=0;this.error=0;this.channel='stereo';this.trim=0}
+  constructor(context){this.context=context;this.gain=context.createGain();this.gain.connect(context.destination);this.sources=new Set();this.drops=0;this.error=0;this.channel='stereo';this.trim=0;this.timeline=new PlaybackTimeline()}
   schedule(m,presentation,now){
-    const context=this.context,time=audioTime(context,presentation+this.trim,now);
+    const context=this.context,desired=audioTime(context,presentation+this.trim,now);
+    const time=this.timeline.schedule(m.sequence,m.epoch,desired,m.frames/48000,context.currentTime);
     if(time<context.currentTime+.003){this.drops++;this.error=context.currentTime-time;return false}
     const pcm=decodePCM(m),buffer=context.createBuffer(2,m.frames,48000),left=buffer.getChannelData(0),right=buffer.getChannelData(1);
     for(let i=0;i<m.frames;i++){left[i]=this.channel==='right'?pcm[i*2+1]:pcm[i*2];right[i]=this.channel==='left'?pcm[i*2]:pcm[i*2+1]}
     const source=context.createBufferSource();source.buffer=buffer;source.connect(this.gain);this.sources.add(source);
-    source.onended=()=>{this.sources.delete(source);source.disconnect()};source.start(time);this.error=0;return true;
+    source.onended=()=>{this.sources.delete(source);source.disconnect()};source.start(time);this.error=Math.abs(time-desired);return true;
   }
-  clear(){for(const source of this.sources){try{source.stop()}catch{}source.disconnect()}this.sources.clear()}
+  clear(){for(const source of this.sources){try{source.stop()}catch{}source.disconnect()}this.sources.clear();this.timeline=new PlaybackTimeline()}
   identify(){const c=this.context;for(let i=0;i<3;i++){const o=c.createOscillator(),g=c.createGain(),t=c.currentTime+.02+i*.2;o.frequency.value=880;g.gain.setValueAtTime(.15,t);g.gain.exponentialRampToValueAtTime(.001,t+.12);o.connect(g);g.connect(this.gain);o.start(t);o.stop(t+.13);o.onended=()=>{o.disconnect();g.disconnect()}}}
 }

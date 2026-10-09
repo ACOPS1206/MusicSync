@@ -308,7 +308,7 @@ class Session(val platform: Platform, private val discoveryEnabled: Boolean = tr
         }
     }
     fun stopStreaming()=post{stopStreamingInternal();publish()}
-    private fun stopStreamingInternal(){sourceGeneration++;runCatching{source?.close()};source=null;player.close();devices.values.filter{it.approved}.forEach{it.peer.send(Message("stop"))};snapshot=snapshot.copy(streaming=false,monitor=false,phase=if(server!=null)"Hosting"else"Ready")}
+    private fun stopStreamingInternal(){sourceGeneration++;player.close();runCatching{source?.close()};source=null;devices.values.filter{it.approved}.forEach{it.peer.send(Message("stop"))};snapshot=snapshot.copy(streaming=false,monitor=false,phase=if(server!=null)"Hosting"else"Ready")}
     private fun tick(){
         val now=Clock.now()
         if(player.failure.isNotEmpty()&&snapshot.error!=player.failure){snapshot=snapshot.copy(error=player.failure);log("Audio output failed: ${player.failure}")}

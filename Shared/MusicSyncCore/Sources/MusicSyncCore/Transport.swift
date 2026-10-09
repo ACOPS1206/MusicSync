@@ -6,32 +6,53 @@ import Foundation
 import Network
 import Security
 
-public final class Peer {
+public final class Peer: @unchecked Sendable {
     public let connection: NWConnection
     public let id = UUID()
     public var onMessage: ((Message) -> Void)?
+    /// Audio-only fast path on the transport queue; the receiver must enforce authorization.
+    public var onAudioMessage: ((Message) -> Void)?
     public var onState: ((NWConnection.State) -> Void)?
     public var onFailure: ((String) -> Void)?
-    public private(set) var tlsSession: TLSSessionInfo?
+    private var session: TLSSessionInfo?
+    public var tlsSession: TLSSessionInfo? { serialized { session } }
     private let sessionReader: (NWConnection) -> TLSSessionInfo?
     private var deferredMessages: [Message] = []
     private var deferredBytes = 0
     private var failureReported = false
-    private let queue: DispatchQueue
+    private let callbackQueue: DispatchQueue
+    private let queue = DispatchQueue(label:"MusicSync.transport",qos:.userInitiated)
+    private let queueKey = DispatchSpecificKey<Bool>()
     private var framer = Framer()
+    private let submissionLock = NSLock()
+    private var submittedBytes = 0
     private var queuedBytes = 0
     private var closed = false
     public init(_ connection: NWConnection, queue: DispatchQueue, sessionReader: @escaping (NWConnection) -> TLSSessionInfo? = TLSSessionInfo.read) {
-        self.connection = connection; self.queue = queue; self.sessionReader = sessionReader
+        self.connection = connection; self.callbackQueue = queue; self.sessionReader = sessionReader
+        self.queue.setSpecific(key:queueKey,value:true)
     }
-    public func start() {
+    private func serialized<T>(_ body: () throws -> T) rethrows -> T {
+        if DispatchQueue.getSpecific(key:queueKey) == true { return try body() }
+        return try queue.sync(execute:body)
+    }
+    private func state(_ value: NWConnection.State) { callbackQueue.async { [weak self] in self?.onState?(value) } }
+    private func deliver(_ message: Message) {
+        if message.kind == "audio", let audio = onAudioMessage { audio(message) }
+        else if message.kind == "stop", let audio = onAudioMessage {
+            audio(message); callbackQueue.async { [weak self] in self?.onMessage?(message) }
+        }
+        else { callbackQueue.async { [weak self] in self?.onMessage?(message) } }
+    }
+    public func start() { queue.async { [self] in startOnQueue() } }
+    private func startOnQueue() {
         connection.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
-            if self.closed { if case .cancelled = state { self.onState?(state) }; return }
+            if self.closed { if case .cancelled = state { self.state(state) }; return }
             if case .ready = state { self.prepareSecurity(attempt:0); return }
             if case .failed(let error) = state { self.reportFailure("TLS/network failed: \(error)") }
             if case .waiting(let error) = state { self.reportFailure("TLS/network waiting: \(error)") }
-            self.onState?(state)
+            self.state(state)
             if case .waiting = state { self.cancel() }
         }
         connection.start(queue: queue)
@@ -40,11 +61,11 @@ public final class Peer {
     private func prepareSecurity(attempt: Int) {
         guard !closed else { return }
         if let session = sessionReader(connection) {
-            tlsSession = session
-            onState?(.ready)
+            self.session = session
+            state(.ready)
             guard !closed else { return }
             let pending = deferredMessages; deferredMessages.removeAll(); deferredBytes = 0
-            for message in pending { guard !closed else { return }; onMessage?(message) }
+            for message in pending { guard !closed else { return }; deliver(message) }
         } else if attempt < 20 {
             queue.asyncAfter(deadline:.now()+0.1) { [weak self] in self?.prepareSecurity(attempt:attempt+1) }
         } else {
@@ -53,10 +74,25 @@ public final class Peer {
         }
     }
     private func reportFailure(_ reason: String) {
-        guard !failureReported else { return }; failureReported = true; onFailure?(reason)
+        guard !failureReported else { return }; failureReported = true; callbackQueue.async { [weak self] in self?.onFailure?(reason) }
     }
-    /// All calls and callbacks are serialized on the supplied queue.
+    /// Encoding and network I/O stay off the callback/UI queue; FIFO ordering is preserved.
     public func send(_ message: Message) {
+        // Bound work awaiting JSON encoding as well as bytes already passed to Network.framework.
+        let cost = (message.payload?.count ?? 0)*4/3+1024
+        submissionLock.lock()
+        if submittedBytes+cost > (message.kind == "audio" ? 96*1024 : 512*1024) {
+            submissionLock.unlock()
+            if message.kind != "audio" { queue.async { [self] in reportFailure("Outgoing submission queue exceeded 512 KiB"); cancelOnQueue() } }
+            return
+        }
+        submittedBytes += cost; submissionLock.unlock()
+        queue.async { [self] in
+            sendOnQueue(message)
+            submissionLock.lock(); submittedBytes -= cost; submissionLock.unlock()
+        }
+    }
+    private func sendOnQueue(_ message: Message) {
         guard !closed, let data = try? Framer.encode(message) else { return }
         // A stalled receiver must not accumulate seconds of stale audio.
         if message.kind == "audio", queuedBytes + data.count > 96 * 1024 { return }
@@ -68,7 +104,8 @@ public final class Peer {
             if let error { self.reportFailure("Send failed: \(error)"); self.cancel() }
         })
     }
-    public func cancel() {
+    public func cancel() { queue.async { [self] in cancelOnQueue() } }
+    private func cancelOnQueue() {
         guard !closed else { return }
         closed = true; connection.cancel()
     }
@@ -78,11 +115,11 @@ public final class Peer {
             if let data {
                 do {
                     let messages = try self.framer.consume(data)
-                    if self.tlsSession == nil {
+                    if self.session == nil {
                         self.deferredBytes += data.count
                         guard self.deferredBytes <= 128 * 1024 else { self.reportFailure("TLS bootstrap receive queue exceeded 128 KiB"); self.cancel(); return }
                         self.deferredMessages.append(contentsOf:messages)
-                    } else { for message in messages { guard !self.closed else { return }; self.onMessage?(message) } }
+                    } else { for message in messages { guard !self.closed else { return }; self.deliver(message) } }
                 }
                 catch { self.reportFailure("Invalid protocol framing: \(error)"); self.cancel(); return }
             }
