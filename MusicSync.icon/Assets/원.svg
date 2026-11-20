@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+<svg
+   width="512mm"
+   height="512mm"
+   viewBox="0 0 512 512"
+   version="1.1"
+   id="svg1"
+   inkscape:export-filename="삼각형_중복.svg"
+   inkscape:export-xdpi="96"
+   inkscape:export-ydpi="96"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#505050"
+     bordercolor="#eeeeee"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#505050"
+     inkscape:document-units="mm">
+    <inkscape:page
+       x="0"
+       y="0"
+       width="512"
+       height="512"
+       id="page2"
+       margin="0"
+       bleed="0" />
+  </sodipodi:namedview>
+  <defs
+     id="defs1">
+    <inkscape:path-effect
+       effect="fillet_chamfer"
+       id="path-effect2"
+       is_visible="true"
+       lpeversion="1"
+       nodesatellites_param="F,0,0,1,0,181.40402,0,1 @ F,0,0,1,0,181.40402,0,1 @ F,0,0,1,0,181.40402,0,1"
+       radius="300"
+       unit="px"
+       method="auto"
+       mode="F"
+       chamfer_steps="1"
+       flexible="false"
+       use_knot_distance="true"
+       apply_no_radius="true"
+       apply_with_radius="true"
+       only_selected="false"
+       hide_knots="false" />
+  </defs>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <path
+       id="path2"
+       style="fill:#ffffff;stroke-width:2.64583"
+       inkscape:transform-center-x="-4.2896389e-06"
+       inkscape:transform-center-y="-47.220084"
+       transform="matrix(0.22482542,-0.18445343,-0.22482542,-0.18445343,256,417.55984)"
+       d="M 336.77716,465.04918 -524.18216,234.35582 A 104.73366,104.73366 75 0 1 -571.13298,59.132996 L 59.132989,-571.13299 a 104.73366,104.73366 15 0 1 175.222831,46.95082 L 465.04917,336.77716 A 104.73366,104.73366 135 0 1 336.77716,465.04918 Z"
+       inkscape:original-d="M 511.99999,511.99999 -699.40499,187.40501 187.405,-699.405 Z"
+       inkscape:path-effect="#path-effect2" />
+  </g>
+</svg>
